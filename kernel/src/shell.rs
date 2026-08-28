@@ -84,6 +84,7 @@ fn handle(line: &str) {
         "help" => cmd_help(),
         "clear" => framebuffer::clear(),
         "ls" => cmd_ls(),
+        "echo" => cmd_echo(arg),
         "touch" => cmd_touch(arg),
         "cat" => cmd_cat(arg),
         "edit" => cmd_edit(arg),
@@ -103,24 +104,31 @@ fn handle(line: &str) {
 }
 
 fn cmd_help() {
-    print_color!(YELLOW, "commands:\n");
-    println!("  help          list commands");
-    println!("  clear         clear screen");
-    println!("  ls            list files");
-    println!("  pwd           current path");
-    println!("  cd <dir>      change directory (.. / /)");
-    println!("  mkdir <name>  create directory");
-    println!("  touch <name>  create empty file");
-    println!("  cat <name>    show contents");
-    println!("  edit <name>   editor (Esc to save)");
-    println!("  rm <name>     delete file or empty dir");
-    println!("  df            disk usage");
-    println!("  mem           heap memory usage");
-    println!("  memtest       test dynamic allocation");
-    println!("  wasm          run embedded WebAssembly module");
-    println!("  run <file>    run a mini-language script");
-    println!("  gui           launch graphical mode (type tty to exit)");
-    println!("  rand [max]    random number (hardware-based)");
+print_color!(GREEN, "+-- System Help ------------------------------------------+\n");
+println!("|  COMMAND        ARGS          DESCRIPTION               |");
+print_color!(GREEN, "+-- File System ------------------------------------------+\n");
+println!("|                                                         |");
+println!("|  ls / pwd                     List contents / print path|");
+println!("|  cd             <dir>         Change current directory  |");
+println!("|  cat / edit     <file>        View or edit file         |");
+println!("|  touch / mkdir  <name>        Create empty file / dir   |");
+println!("|  rm             <name>        Delete file or empty dir  |");
+println!("|  df                           Disk usage statistics     |");
+println!("|                                                         |");
+print_color!(YELLOW, "+-- Executables & Dev ------------------------------------+\n");
+println!("|                                                         |");
+println!("|  run            <file>        Execute script file       |");
+println!("|  wasm                         Run WebAssembly module    |");
+println!("|  mem / memtest                Memory state & diagnostics|");
+println!("|                                                         |");
+print_color!(RED, "+-- Core & Utilities -------------------------------------+ \n");
+println!("|                                                         |");
+println!("|  echo           <text>        Write text into console   |");
+println!("|  rand           [max]         Random number (hardware)  |");
+println!("|  gui                          Switch to graphic desktop |");
+println!("|  clear / help                 Control terminal session  |");
+println!("|                                                         |");
+print_color!(GREEN, "+---------------------------------------------------------+\n");
 }
 
 fn cmd_ls() {
@@ -137,6 +145,10 @@ fn cmd_ls() {
     if count == 0 {
         print_color!(GRAY, "(empty)\n");
     }
+}
+
+fn cmd_echo(arg: &str) {
+    println!("{}", arg);
 }
 
 fn cmd_pwd() {
