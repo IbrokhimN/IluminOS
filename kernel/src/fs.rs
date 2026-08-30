@@ -264,6 +264,43 @@ pub fn list<F: FnMut(&str, u32, bool)>(mut f: F) {
     }
 }
 
+// список содержимого произвольной директории dir: callback(inode, имя, размер, папка)
+pub fn list_dir<F: FnMut(usize, &str, u32, bool)>(dir: usize, mut f: F) {
+    for i in 0..MAX_FILES {
+        let n = read_inode(i);
+        if n.used && n.parent as usize == dir && i != ROOT_INODE {
+            if let Ok(s) = core::str::from_utf8(&n.name[..n.name_len]) {
+                f(i, s, n.size, n.is_dir);
+            }
+        }
+    }
+}
+
+// рекурсивный поиск по имени начиная с dir. callback(полный_путь_фрагмент, папка).
+// вызывает f для каждого совпадения имени. глубина ограничена MAX_FILES.
+pub fn find_recursive<F: FnMut(usize, bool)>(dir: usize, name: &str, f: &mut F) {
+    for i in 0..MAX_FILES {
+        let n = read_inode(i);
+        if n.used && n.parent as usize == dir && i != ROOT_INODE {
+            let is_match = n.name_eq(name);
+            if is_match {
+                f(i, n.is_dir);
+            }
+            if n.is_dir {
+                find_recursive(i, name, f);
+            }
+        }
+    }
+}
+
+// имя inode по индексу в буфер, вернуть длину
+pub fn name_of(idx: usize, out: &mut [u8; NAME_MAX]) -> usize {
+    let n = read_inode(idx);
+    let len = n.name_len.min(NAME_MAX);
+    out[..len].copy_from_slice(&n.name[..len]);
+    len
+}
+
 // найти свободный inode
 fn alloc_inode() -> Option<usize> {
     for i in 0..MAX_FILES {

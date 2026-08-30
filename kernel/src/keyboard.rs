@@ -5,15 +5,23 @@ use crate::port::inb;
 pub const KEY_ENTER: u8 = b'\n';
 pub const KEY_BACKSPACE: u8 = 0x08;
 pub const KEY_ESC: u8 = 0x1b;
+pub const KEY_TAB: u8 = 0x09;
+// спец-коды вне печатного диапазона для стрелок (editor их игнорирует)
+pub const KEY_UP: u8 = 0x11;
+pub const KEY_DOWN: u8 = 0x12;
+pub const KEY_LEFT: u8 = 0x13;
+pub const KEY_RIGHT: u8 = 0x14;
 
 struct KbState {
     shift: bool,
     caps: bool,
+    extended: bool,
 }
 
 static STATE: Mutex<KbState> = Mutex::new(KbState {
     shift: false,
     caps: false,
+    extended: false,
 });
 
 // есть ли готовый байт в буфере клавиатуры без ожидания
@@ -27,6 +35,32 @@ pub fn has_key() -> bool {
 fn process_one() -> Option<u8> {
     let code = inb(0x60);
 
+    // префикс расширенных клавиш (стрелки и т.п.) — запоминаем и ждём следующий байт
+    if code == 0xe0 {
+        STATE.lock().extended = true;
+        return None;
+    }
+
+    // если предыдущий байт был 0xe0 — это расширенная клавиша
+    {
+        let mut s = STATE.lock();
+        if s.extended {
+            s.extended = false;
+            drop(s);
+            // отпускание (bit7) расширенной клавиши игнорируем
+            if code & 0x80 != 0 {
+                return None;
+            }
+            return match code {
+                0x48 => Some(KEY_UP),
+                0x50 => Some(KEY_DOWN),
+                0x4b => Some(KEY_LEFT),
+                0x4d => Some(KEY_RIGHT),
+                _ => None,
+            };
+        }
+    }
+
     if code & 0x80 != 0 {
         let make = code & 0x7f;
         if make == 0x2a || make == 0x36 {
@@ -36,6 +70,7 @@ fn process_one() -> Option<u8> {
     }
 
     match code {
+        0x0f => Some(KEY_TAB),
         0x2a | 0x36 => {
             STATE.lock().shift = true;
             None

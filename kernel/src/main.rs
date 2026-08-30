@@ -5,6 +5,7 @@ extern crate alloc;
 
 mod allocator;
 mod random;
+mod time;
 mod framebuffer;
 mod banner;
 mod port;
@@ -58,6 +59,7 @@ unsafe extern "C" fn kmain() -> ! {
 
     allocator::init();
     random::init();
+    time::init();
 
     banner::show();
 

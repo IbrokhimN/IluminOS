@@ -28,7 +28,7 @@ pub fn show() {
     }
     framebuffer::set_color(GRAY);
     println!();
-    println!("        a tiny OS that runs wasm and its own language");
-    framebuffer::set_color(framebuffer::WHITE);
+    println!("        a tiny OS made by IbrokhimN");
+    framebuffer::set_color(framebuffer::theme_fg());
     println!();
 }

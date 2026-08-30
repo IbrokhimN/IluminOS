@@ -11,6 +11,8 @@ pub const RED: u32 = 0xFF4444;
 pub const CYAN: u32 = 0x33DDFF;
 pub const YELLOW: u32 = 0xFFDD33;
 pub const BLACK: u32 = 0x000000;
+pub const BLUE: u32 = 0x5599FF;
+pub const MAGENTA: u32 = 0xCC77FF;
 
 struct Fb {
     addr: *mut u8,
@@ -25,6 +27,24 @@ struct Fb {
 }
 
 static FB: Mutex<Option<Fb>> = Mutex::new(None);
+
+// тема: дефолтный цвет текста и фона. print_color! сбрасывает fg в этот цвет.
+static THEME_FG: Mutex<u32> = Mutex::new(WHITE);
+
+// вернуть текущий дефолтный цвет текста темы
+pub fn theme_fg() -> u32 {
+    *THEME_FG.lock()
+}
+
+// поставить тему: dark = белый текст на чёрном, light = чёрный текст на белом
+pub fn set_theme(fg: u32, bg: u32) {
+    *THEME_FG.lock() = fg;
+    let mut guard = FB.lock();
+    if let Some(fb) = guard.as_mut() {
+        fb.fg = fg;
+        fb.bg = bg;
+    }
+}
 
 const GLYPH_W: usize = 8;
 const GLYPH_H: usize = 8;
@@ -181,9 +201,19 @@ impl Fb {
 pub fn clear() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        let total = fb.pitch * fb.height;
-        unsafe {
-            core::ptr::write_bytes(fb.addr, 0, total);
+        let bg = fb.bg;
+        if bg == BLACK {
+            let total = fb.pitch * fb.height;
+            unsafe {
+                core::ptr::write_bytes(fb.addr, 0, total);
+            }
+        } else {
+            // не чёрный фон — заливаем попиксельно
+            for y in 0..fb.height {
+                for x in 0..fb.width {
+                    fb.put_pixel(x, y, bg);
+                }
+            }
         }
         fb.col = 0;
         fb.row = 0;
@@ -445,6 +475,6 @@ macro_rules! print_color {
     ($color:expr, $($arg:tt)*) => {{
         $crate::framebuffer::set_color($color);
         $crate::print!($($arg)*);
-        $crate::framebuffer::set_color($crate::framebuffer::WHITE);
+        $crate::framebuffer::set_color($crate::framebuffer::theme_fg());
     }};
 }

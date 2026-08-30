@@ -6,7 +6,7 @@
 use alloc::vec::Vec;
 use alloc::string::String;
 use crate::fs::{self, FILE_MAX_BYTES};
-use crate::{print, println, print_color};
+use crate::print_color;
 use crate::framebuffer::{GREEN, RED, YELLOW, CYAN};
 
 // одна переменная: имя + значение
@@ -264,6 +264,17 @@ fn is_ident_char(c: u8) -> bool {
 
 fn is_valid_name(name: &str) -> bool {
     !name.is_empty() && name.bytes().all(|c| is_ident_char(c)) && is_ident_start(name.as_bytes()[0])
+}
+
+// вычислить одиночное выражение (для команды calc в shell).
+// без переменных, только арифметика.
+pub fn eval_expr(expr: &str) -> Result<i64, &'static str> {
+    let mut interp = Interp::new();
+    let val = interp.eval(expr);
+    match interp.error {
+        Some(e) => Err(e),
+        None => Ok(val),
+    }
 }
 
 // точка входа: запустить скрипт из файла

@@ -1,5 +1,5 @@
 use wasmi::{Engine, Module, Store, Linker};
-use crate::{print, println, print_color};
+use crate::{println, print_color};
 use crate::framebuffer::{GREEN, RED, YELLOW};
 
 static DEMO_WASM: &[u8] = include_bytes!("demo.wasm");
