@@ -20,6 +20,11 @@ mod apps;
 mod mouse;
 mod html;
 mod editor;
+mod monitor;
+mod sound;
+mod piano;
+mod login;
+mod tcp;
 
 use core::arch::asm;
 use limine::BaseRevision;
@@ -70,6 +75,8 @@ unsafe extern "C" fn kmain() -> ! {
     fs::init();
     print_color!(GREEN, "[ok]");
     println!(" filesystem mounted");
+
+    login::run();
 
     shell::run();
 }

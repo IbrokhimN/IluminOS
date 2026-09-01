@@ -1,10 +1,6 @@
-// файловая система с bitmap-выделением блоков, inode и папками.
-// папка - это inode с флагом is_dir
-//inode
-//   сектор 0       суперблок
-//   секторы 1-2    bitmap блоков
-//   секторы 3-34   таблица inode (64 inode по 256 байт)
-//   секторы 35+    блоки данных
+// файловая система bitmap + inode + папки
+// разметка диска суперблок / bitmap / таблица inode / блоки данных
+// папка это inode с флагом is_dir
 use crate::ata::{self, SECTOR_SIZE};
 use spin::Mutex;
 
@@ -32,12 +28,7 @@ pub const ROOT_INODE: usize = 0;
 // текущая директория (номер inode). глобальное состояние.
 static CWD: Mutex<usize> = Mutex::new(ROOT_INODE);
 
-//   [0]        used (0/1)
-//   [1]        is_dir (0/1)
-//   [2..6]     parent inode (u32 le)
-//   [6..32]    имя (до 26 байт)
-//   [32..36]   размер (u32 le)
-//   [36..84]   12 номеров блоков (u32 le)
+// inode на диске used is_dir parent имя размер и 12 блоков
 #[derive(Clone)]
 pub struct Inode {
     pub used: bool,
@@ -193,7 +184,7 @@ fn write_inode(index: usize, node: &Inode) {
     ata::write_sector(sector, &buf);
 }
 
-// --- формат/инициализация ---
+// формат и инициализация диска
 
 fn format() {
     let mut sb = [0u8; SECTOR_SIZE];
@@ -229,7 +220,7 @@ pub fn init() {
     *CWD.lock() = ROOT_INODE;
 }
 
-// --- работа с текущей директорией ---
+// навигация по папкам
 
 pub fn cwd() -> usize {
     *CWD.lock()
@@ -282,9 +273,8 @@ pub fn find_recursive<F: FnMut(usize, bool)>(dir: usize, name: &str, f: &mut F) 
     for i in 0..MAX_FILES {
         let n = read_inode(i);
         if n.used && n.parent as usize == dir && i != ROOT_INODE {
-            let is_match = n.name_eq(name);
-            if is_match {
-                f(i, n.is_dir);
+            if n.name_eq(name) {
+                f(i, n.is_dir); // нашли
             }
             if n.is_dir {
                 find_recursive(i, name, f);
@@ -408,7 +398,7 @@ pub fn pwd_into(buf: &mut [u8; 256]) -> usize {
     pos
 }
 
-// --- чтение/запись файлов (в текущей директории) ---
+// чтение и запись файлов
 
 pub fn read(name: &str, out: &mut [u8; FILE_MAX_BYTES]) -> Result<usize, &'static str> {
     let idx = find(name).ok_or("file not found")?;

@@ -17,7 +17,8 @@ const COMMANDS: &[&str] = &[
     "help", "clear", "cls", "ls", "ll", "echo", "touch", "cat", "edit", "rm",
     "df", "mkdir", "cd", "pwd", "mem", "memtest", "wasm", "run", "rand", "gui",
     "uptime", "whoami", "hostname", "theme", "history", "cowsay", "calc",
-    "date", "about", "tree", "wc", "find", "cp",
+    "date", "about", "tree", "wc", "find", "cp", "lspci", "nic", "ping", "htop", "piano",
+    "lock", "beep", "reboot", "shutdown", "neofetch", "sleep", "dice", "banner",
 ];
 
 // история команд и счётчик выполненных
@@ -224,6 +225,19 @@ fn handle(line: &str) {
         "wc" => cmd_wc(arg),
         "find" => cmd_find(arg),
         "cp" => cmd_cp(arg),
+        "lspci" => cmd_lspci(),
+        "nic" => cmd_nic(),
+        "ping" => cmd_ping(arg),
+        "htop" | "monitor" => crate::monitor::run(),
+        "piano" => crate::piano::run(),
+        "lock" => cmd_lock(),
+        "beep" => cmd_beep(),
+        "reboot" => cmd_reboot(),
+        "shutdown" => cmd_shutdown(),
+        "neofetch" => cmd_neofetch(),
+        "sleep" => cmd_sleep(arg),
+        "dice" => cmd_dice(),
+        "banner" => crate::banner::show(),
         _ => print_color!(RED, "unknown command: {}. type help\n", cmd),
     }
 }
@@ -262,6 +276,9 @@ println!("|  history                      Show command history      |");
 println!("|  about                        System info & version     |");
 println!("|  gui                          Switch to graphic desktop |");
 println!("|  clear / help                 Control terminal session  |");
+println!("|  lock / neofetch              Lock screen / sysinfo    |");
+println!("|  beep / dice / sleep <n>      Sound / random / pause   |");
+println!("|  reboot / shutdown            Power control            |");
 println!("|                                                         |");
 print_color!(GREEN, "+---------------------------------------------------------+\n");
 }
@@ -470,7 +487,6 @@ fn cmd_edit(arg: &str) {
     editor::run(arg);
 }
 
-// === новые команды ===
 
 fn cmd_uptime() {
     let (h, m, s) = time::uptime_hms();
@@ -662,4 +678,131 @@ fn cmd_cp(arg: &str) {
         Ok(()) => print_color!(GREEN, "copied {} -> {} ({} bytes)\n", src, dst, size),
         Err(e) => print_color!(RED, "error: {}\n", e),
     }
+}
+
+// найти сетевую карту RTL8139 через PCI
+fn cmd_lspci() {
+    match crate::tcp::pci::find_device(
+        crate::tcp::pci::RTL8139_VENDOR,
+        crate::tcp::pci::RTL8139_DEVICE,
+    ) {
+        Some(dev) => {
+            print_color!(GREEN, "found RTL8139\n");
+            println!("  vendor:device = {:04x}:{:04x}", dev.vendor_id, dev.device_id);
+            println!("  bar0 = {:#010x}", dev.bar0);
+            println!("  irq  = {}", dev.irq_line);
+        }
+        None => print_color!(RED, "no RTL8139 (нужен флаг QEMU: -device rtl8139)\n"),
+    }
+}
+
+// разбудить карту и прочитать MAC
+fn cmd_nic() {
+    if !crate::tcp::rtl8139::init() {
+        print_color!(RED, "no network card (нужен -device rtl8139 в QEMU)\n");
+        return;
+    }
+    print_color!(GREEN, "card initialized\n");
+    match crate::tcp::rtl8139::mac_address() {
+        Some(mac) => {
+            print!("  MAC = ");
+            for (i, b) in mac.iter().enumerate() {
+                if i > 0 { print!(":"); }
+                print!("{:02x}", b);
+            }
+            println!();
+        }
+        None => print_color!(RED, "  failed to read MAC\n"),
+    }
+}
+
+// пропинговать IP ICMP echo
+fn cmd_ping(arg: &str) {
+    if arg.is_empty() {
+        print_color!(RED, "usage: ping <ip>   (напр. ping 10.0.2.2)\n");
+        return;
+    }
+    crate::tcp::net::cmd_ping(arg);
+}
+
+// заблокировать экран вернуться на вход
+fn cmd_lock() {
+    crate::login::run();
+    framebuffer::clear();
+    crate::banner::show();
+    print_color!(GREEN, "unlocked.\n");
+}
+
+// короткий тестовый писк
+fn cmd_beep() {
+    crate::sound::beep(880, 1);
+    print_color!(GRAY, "beep!\n");
+}
+
+// перезагрузка через контроллер клавиатуры порт 0x64
+fn cmd_reboot() {
+    print_color!(YELLOW, "rebooting...\n");
+    crate::sound::delay(2);
+    crate::port::outb(0x64, 0xFE); // pulse reset
+    loop { core::hint::spin_loop(); }
+}
+
+// выключение в QEMU через ACPI порт 0x604
+fn cmd_shutdown() {
+    print_color!(YELLOW, "shutting down...\n");
+    crate::sound::delay(2);
+    crate::port::outw(0x604, 0x2000);
+    // не сработало значит реальное железо
+    print_color!(RED, "shutdown not supported on this machine.\n");
+    loop { core::hint::spin_loop(); }
+}
+
+// сводка о системе как neofetch
+fn cmd_neofetch() {
+    let total = allocator::heap_size();
+    let used = allocator::heap_used();
+    let (h, m, s) = time::uptime_hms();
+    let disk_used = fs::used_blocks();
+    let disk_total = fs::total_blocks();
+    let (sw, sh) = framebuffer::dimensions();
+
+    // лого слева инфо справа
+    print_color!(CYAN,    "    ___         ");  print_color!(GREEN, "root");
+    print_color!(GRAY, "@"); print_color!(GREEN, "iluminos\n");
+    print_color!(CYAN,    "   / _ \\        "); print_color!(GRAY, "-----------------\n");
+    print_color!(CYAN,    "  | | | |       "); print_color!(YELLOW, "OS:      "); println!("IluminOS v0.2");
+    print_color!(CYAN,    "  | | | |       "); print_color!(YELLOW, "Kernel:  "); println!("Rust no_std");
+    print_color!(CYAN,    "  | |_| |       "); print_color!(YELLOW, "Uptime:  "); println!("{}h {}m {}s", h, m, s);
+    print_color!(CYAN,    "   \\___/        "); print_color!(YELLOW, "Shell:   "); println!("iluminos-sh");
+    print_color!(CYAN,    "               ");  print_color!(YELLOW, " Res:     "); println!("{}x{}", sw, sh);
+    print_color!(GRAY,    "               ");  print_color!(YELLOW, " Memory:  "); println!("{} / {} KB", used/1024, total/1024);
+    print_color!(GRAY,    "               ");  print_color!(YELLOW, " Disk:    "); println!("{} / {} blocks", disk_used, disk_total);
+    println!();
+    // палитра
+    print_color!(RED, "  ###"); print_color!(GREEN, "###"); print_color!(YELLOW, "###");
+    print_color!(BLUE, "###"); print_color!(MAGENTA, "###"); print_color!(CYAN, "###");
+    print_color!(WHITE, "###\n");
+}
+
+// пауза на N единиц грубо секунды
+fn cmd_sleep(arg: &str) {
+    if arg.is_empty() {
+        print_color!(RED, "usage: sleep <n>\n");
+        return;
+    }
+    let n = parse_u64(arg);
+    if n == 0 || n > 60 {
+        print_color!(RED, "sleep: 1..60\n");
+        return;
+    }
+    print_color!(GRAY, "sleeping {}...\n", n);
+    crate::sound::delay(n as u32 * 5);
+    print_color!(GREEN, "awake.\n");
+}
+
+// бросок кубика 1..6 через рандом
+fn cmd_dice() {
+    let roll = crate::random::next_range(6) + 1;
+    print_color!(YELLOW, "  you rolled: ");
+    print_color!(GREEN, "{}\n", roll);
 }
