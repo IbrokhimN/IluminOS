@@ -3,30 +3,26 @@
 
 extern crate alloc;
 
-mod allocator;
-mod random;
-mod time;
-mod framebuffer;
-mod banner;
-mod port;
-mod keyboard;
-mod ata;
+// подсистемы по папкам
+mod kcore;
+mod mem;
+mod drivers;
 mod fs;
-mod shell;
-mod wasm;
-mod script;
 mod gui;
 mod apps;
-mod mouse;
-mod html;
-mod editor;
-mod monitor;
-mod sound;
-mod piano;
-mod login;
-mod tcp;
+mod shell;
 
-use core::arch::asm;
+// плоские алиасы в корень крейта — чтобы существующие crate::<модуль> пути работали
+pub use kcore::{random, time, banner, login};
+pub use mem::allocator;
+pub use drivers::{port, keyboard, mouse, ata, sound};
+pub use drivers::net as tcp;              // crate::tcp::pci / net / rtl8139 / device
+pub use gui::{framebuffer, html};
+pub use apps::{editor, monitor, piano, script, wasm};
+// GUI-приложения (Clock/Calc/Paint) — gui.rs зовёт crate::apps::{...}
+// но crate::apps занят консольными. gui.rs правим на crate::gui::widgets::apps
+
+use ::core::arch::asm;
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
 use framebuffer::{GREEN, GRAY};
@@ -82,7 +78,7 @@ unsafe extern "C" fn kmain() -> ! {
 }
 
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+fn rust_panic(_info: &::core::panic::PanicInfo) -> ! {
     hcf();
 }
 
