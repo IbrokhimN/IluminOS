@@ -1,2 +1,0 @@
-// память
-pub mod allocator;
