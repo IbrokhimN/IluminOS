@@ -1,16 +1,33 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
+extern crate alloc;
 
+// подсистемы по папкам
+mod kcore;
+mod mem;
+mod drivers;
+mod fs;
+mod gui;
+mod apps;
+mod shell;
+
+// плоские алиасы в корень крейта — чтобы существующие crate::<модуль> пути работали
+pub use kcore::{random, time, banner, login};
+pub use mem::allocator;
+pub use drivers::{port, keyboard, mouse, ata, sound};
+pub use drivers::net as tcp;              // crate::tcp::pci / net / rtl8139 / device
+pub use gui::{framebuffer, html};
+pub use apps::{editor, monitor, piano, script, wasm};
+// GUI-приложения (Clock/Calc/Paint) — gui.rs зовёт crate::apps::{...}
+// но crate::apps занят консольными. gui.rs правим на crate::gui::widgets::apps
+
+use ::core::arch::asm;
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
+use framebuffer::{GREEN, GRAY};
 
-/// Sets the base revision to the latest revision supported by the crate.
-/// See specification for further info.
-/// Be sure to mark all limine requests with #[used], otherwise they may be removed by the compiler.
 #[used]
-// The .requests section allows limine to find the requests faster and more safely.
 #[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
@@ -18,44 +35,50 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[unsafe(link_section = ".requests")]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
-/// Define the stand and end markers for Limine requests.
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+
 #[used]
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
-    // All limine requests must also be referenced in a called function, otherwise they may be
-    // removed by the linker.
     assert!(BASE_REVISION.is_supported());
 
-    if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
-        if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            for i in 0..100_u64 {
-                // Calculate the pixel offset using the framebuffer information we obtained above.
-                // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
-                let pixel_offset = i * framebuffer.pitch() + i * 4;
-
-                // Write 0xFFFFFFFF to the provided pixel offset to fill it white.
-                unsafe {
-                    framebuffer
-                        .addr()
-                        .add(pixel_offset as usize)
-                        .cast::<u32>()
-                        .write(0xFFFFFFFF)
-                };
-            }
+    if let Some(fb_response) = FRAMEBUFFER_REQUEST.get_response() {
+        if let Some(fb) = fb_response.framebuffers().next() {
+            framebuffer::init(
+                fb.addr(),
+                fb.width() as usize,
+                fb.height() as usize,
+                fb.pitch() as usize,
+            );
         }
     }
 
-    hcf();
+    allocator::init();
+    random::init();
+    time::init();
+
+    banner::show();
+
+    print_color!(GRAY, "booting...\n");
+    print_color!(GREEN, "[ok]");
+    println!(" framebuffer initialized");
+
+    fs::init();
+    print_color!(GREEN, "[ok]");
+    println!(" filesystem mounted");
+
+    login::run();
+
+    shell::run();
 }
 
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+fn rust_panic(_info: &::core::panic::PanicInfo) -> ! {
     hcf();
 }
 
