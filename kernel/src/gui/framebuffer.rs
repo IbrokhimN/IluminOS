@@ -31,7 +31,6 @@ static FB: Mutex<Option<Fb>> = Mutex::new(None);
 // тема: дефолтный цвет текста и фона. print_color! сбрасывает fg в этот цвет.
 static THEME_FG: Mutex<u32> = Mutex::new(WHITE);
 
-// вернуть текущий дефолтный цвет текста темы
 pub fn theme_fg() -> u32 {
     *THEME_FG.lock()
 }
@@ -74,8 +73,6 @@ pub fn set_color(color: u32) {
         fb.fg = color;
     }
 }
-
-// поставить позицию текстового курсора для редактора
 
 // нарисовать курсор подчёркивание под клеткой для редактора статичный
 pub fn draw_edit_cursor(col: usize, row: usize) {
@@ -208,7 +205,7 @@ pub fn clear() {
                 core::ptr::write_bytes(fb.addr, 0, total);
             }
         } else {
-            // не чёрный фон — заливаем попиксельно
+            // не чёрный фон - заливаем попиксельно
             for y in 0..fb.height {
                 for x in 0..fb.width {
                     fb.put_pixel(x, y, bg);
@@ -248,8 +245,6 @@ pub fn hide_cursor() {
     }
 }
 
-
-// размеры экрана в пикселях для GUI
 pub fn dimensions() -> (usize, usize) {
     let guard = FB.lock();
     if let Some(fb) = guard.as_ref() {
@@ -259,7 +254,6 @@ pub fn dimensions() -> (usize, usize) {
     }
 }
 
-// поставить один пиксель напрямую для GUI
 pub fn pixel(x: usize, y: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -267,7 +261,6 @@ pub fn pixel(x: usize, y: usize, color: u32) {
     }
 }
 
-// залитый прямоугольник
 pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -279,7 +272,6 @@ pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     }
 }
 
-// рамка прямоугольника толщиной 1 пиксель
 pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -294,7 +286,6 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     }
 }
 
-// нарисовать один символ в пиксельной позиции заданным цветом
 pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -309,7 +300,6 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     }
 }
 
-// нарисовать строку в пиксельной позиции
 pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     let mut x = px;
     for b in text.bytes() {
@@ -317,7 +307,6 @@ pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
         x += 8;
     }
 }
-
 
 // нарисовать курсор-стрелку мыши в позиции. простая стрелка 12x12
 pub fn draw_cursor_arrow(px: usize, py: usize) {
@@ -353,14 +342,12 @@ pub fn draw_cursor_arrow(px: usize, py: usize) {
     }
 }
 
-
 // буфер под курсором 12x12 пикселей для сохранения фона
 static mut CURSOR_BG: [u32; 144] = [0; 144];
 static mut CURSOR_SAVED: bool = false;
 static mut CURSOR_X: usize = 0;
 static mut CURSOR_Y: usize = 0;
 
-// сохранить фон под будущим курсором в позиции
 pub fn save_under_cursor(px: usize, py: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -383,7 +370,6 @@ pub fn save_under_cursor(px: usize, py: usize) {
     }
 }
 
-// восстановить фон где был курсор
 pub fn restore_under_cursor() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -405,7 +391,6 @@ pub fn restore_under_cursor() {
     }
 }
 
-
 // нарисовать символ с масштабом каждый пиксель глифа рисуется квадратом scale x scale
 pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     let mut guard = FB.lock();
@@ -414,7 +399,6 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
         for (row, bits) in glyph.iter().enumerate() {
             for bit in 0..8 {
                 if bits & (1 << bit) != 0 {
-                    // рисуем квадрат scale x scale вместо одного пикселя
                     for sy in 0..scale {
                         for sx in 0..scale {
                             fb.put_pixel(px + bit * scale + sx, py + row * scale + sy, fg);
@@ -435,7 +419,6 @@ pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize)
     }
     x - px
 }
-
 
 pub struct Writer;
 
