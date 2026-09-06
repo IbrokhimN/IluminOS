@@ -231,8 +231,5 @@ fn draw_gradient(w: usize, h: usize) {
 // приятный аккорд-«динь» при успешном входе
 fn success_animation() {
     // восходящие ноты — «успех»
-    sound::beep(523, 1); // до
-    sound::beep(659, 1); // ми
-    sound::beep(784, 1); // соль
     framebuffer::clear();
 }

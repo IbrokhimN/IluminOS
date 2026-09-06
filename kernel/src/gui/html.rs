@@ -1,4 +1,6 @@
-// HTML парсер: h1-h6 p b i u code a br hr ul ol li blockquote center font color title
+// HTML парсер с расширенным набором тегов.
+// поддержка h1 h6 p b i u code a br hr ul ol li blockquote center
+// font color title. игнорирует html body head обёртки.
 use alloc::vec::Vec;
 use alloc::string::String;
 
@@ -83,6 +85,7 @@ impl Style {
     }
 }
 
+// разобрать имя цвета в число
 fn color_by_name(name: &str) -> u32 {
     match name.trim() {
         "red" => 0xFF0000,
@@ -132,6 +135,7 @@ pub fn parse(html: &str) -> Document {
     let mut list_counter = 0usize; // для ol
     let mut ordered = false;
 
+    // сброс накопленного текста в блок
     fn flush(blocks: &mut Vec<Block>, buf: &mut String, style: &Style, br: bool, list_num: usize) {
         let t = buf.trim();
         if !t.is_empty() {
@@ -157,6 +161,7 @@ pub fn parse(html: &str) -> Document {
 
     while i < bytes.len() {
         if bytes[i] == b'<' {
+            // сбросить текст перед тегом
             if in_title {
                 if let Some(t) = text_buf.trim().get(..) {
                     if !t.is_empty() {

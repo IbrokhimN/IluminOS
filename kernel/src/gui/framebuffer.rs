@@ -3,16 +3,33 @@ use core::fmt;
 use spin::Mutex;
 use font8x8::legacy::BASIC_LEGACY;
 
+// написал цвета справа потому что мой нвим показывает цвета написанных юникодов
+// и мне так удобнее
 // готовые цвета в формате 0x00RRGGBB
-pub const WHITE: u32 = 0xFFFFFF;
-pub const GRAY: u32 = 0xAAAAAA;
-pub const GREEN: u32 = 0x33FF66;
-pub const RED: u32 = 0xFF4444;
-pub const CYAN: u32 = 0x33DDFF;
-pub const YELLOW: u32 = 0xFFDD33;
-pub const BLACK: u32 = 0x000000;
-pub const BLUE: u32 = 0x5599FF;
-pub const MAGENTA: u32 = 0xCC77FF;
+pub const WHITE: u32    =    0xFFFFFF;  // #ffffff
+pub const GRAY: u32     =    0xAAAAAA;  // #aaaaaa
+pub const GREEN: u32    =    0x33FF66;  // #33ff66
+pub const RED: u32      =    0xFF4444;  // #ff4444 
+pub const CYAN: u32     =    0x33DDFF;  // #33ddff
+pub const YELLOW: u32   =    0xFFDD33;  // #ffdd33
+pub const BLACK: u32    =    0x000000;  // #000000
+pub const BLUE: u32     =    0x5599FF;  // #5599ff
+pub const MAGENTA: u32  =    0xCC77FF;  // #cc77ff
+
+
+// EverForest Colors
+pub const EVERFOREST_BACKGROUND: u32   =   0x272E33;  // #272E33
+pub const EVERFOREST_FOREGROUND: u32   =   0xD3C6AA;  // #D4C6AA
+
+pub const EVERFOREST_BLACK: u32        =   0x475258;  // #475258
+pub const EVERFOREST_RED: u32          =   0xE67E80;  // #e67e80
+pub const EVERFOREST_GREEN: u32        =   0xA7C080;  // #a7c080
+pub const EVERFOREST_YELLOW: u32       =   0xDBBC7F;  // #dbbc7f
+pub const EVERFOREST_BLUE: u32         =   0x7FBBB3;  // #7fbbb3
+pub const EVERFOREST_MAGENTA: u32      =   0xD699B6;  // #d699b6
+pub const EVERFOREST_CYAN: u32         =   0x83C092;  // #83c092
+pub const EVERFOREST_WHITE: u32        =   0xD3C6AA;  // #d3c6aa
+
 
 struct Fb {
     addr: *mut u8,
@@ -29,8 +46,9 @@ struct Fb {
 static FB: Mutex<Option<Fb>> = Mutex::new(None);
 
 // тема: дефолтный цвет текста и фона. print_color! сбрасывает fg в этот цвет.
-static THEME_FG: Mutex<u32> = Mutex::new(WHITE);
+static THEME_FG: Mutex<u32> = Mutex::new(EVERFOREST_FOREGROUND);
 
+// вернуть текущий дефолтный цвет текста темы
 pub fn theme_fg() -> u32 {
     *THEME_FG.lock()
 }
@@ -59,8 +77,8 @@ pub fn init(addr: *mut u8, width: usize, height: usize, pitch: usize) {
         pitch,
         col: 0,
         row: 0,
-        fg: WHITE,
-        bg: BLACK,
+        fg: EVERFOREST_FOREGROUND,
+        bg: EVERFOREST_BACKGROUND,
         cursor_on: false,
     });
     drop(guard);
@@ -73,6 +91,8 @@ pub fn set_color(color: u32) {
         fb.fg = color;
     }
 }
+
+// поставить позицию текстового курсора для редактора
 
 // нарисовать курсор подчёркивание под клеткой для редактора статичный
 pub fn draw_edit_cursor(col: usize, row: usize) {
@@ -205,7 +225,7 @@ pub fn clear() {
                 core::ptr::write_bytes(fb.addr, 0, total);
             }
         } else {
-            // не чёрный фон - заливаем попиксельно
+            // не чёрный фон — заливаем попиксельно
             for y in 0..fb.height {
                 for x in 0..fb.width {
                     fb.put_pixel(x, y, bg);
@@ -245,6 +265,8 @@ pub fn hide_cursor() {
     }
 }
 
+
+// размеры экрана в пикселях для GUI
 pub fn dimensions() -> (usize, usize) {
     let guard = FB.lock();
     if let Some(fb) = guard.as_ref() {
@@ -254,6 +276,7 @@ pub fn dimensions() -> (usize, usize) {
     }
 }
 
+// поставить один пиксель напрямую для GUI
 pub fn pixel(x: usize, y: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -261,6 +284,7 @@ pub fn pixel(x: usize, y: usize, color: u32) {
     }
 }
 
+// залитый прямоугольник
 pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -272,6 +296,7 @@ pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     }
 }
 
+// рамка прямоугольника толщиной 1 пиксель
 pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -286,6 +311,7 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     }
 }
 
+// нарисовать один символ в пиксельной позиции заданным цветом
 pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -300,6 +326,7 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     }
 }
 
+// нарисовать строку в пиксельной позиции
 pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     let mut x = px;
     for b in text.bytes() {
@@ -307,6 +334,7 @@ pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
         x += 8;
     }
 }
+
 
 // нарисовать курсор-стрелку мыши в позиции. простая стрелка 12x12
 pub fn draw_cursor_arrow(px: usize, py: usize) {
@@ -342,12 +370,14 @@ pub fn draw_cursor_arrow(px: usize, py: usize) {
     }
 }
 
+
 // буфер под курсором 12x12 пикселей для сохранения фона
 static mut CURSOR_BG: [u32; 144] = [0; 144];
 static mut CURSOR_SAVED: bool = false;
 static mut CURSOR_X: usize = 0;
 static mut CURSOR_Y: usize = 0;
 
+// сохранить фон под будущим курсором в позиции
 pub fn save_under_cursor(px: usize, py: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -370,6 +400,7 @@ pub fn save_under_cursor(px: usize, py: usize) {
     }
 }
 
+// восстановить фон где был курсор
 pub fn restore_under_cursor() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -391,6 +422,7 @@ pub fn restore_under_cursor() {
     }
 }
 
+
 // нарисовать символ с масштабом каждый пиксель глифа рисуется квадратом scale x scale
 pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     let mut guard = FB.lock();
@@ -399,6 +431,7 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
         for (row, bits) in glyph.iter().enumerate() {
             for bit in 0..8 {
                 if bits & (1 << bit) != 0 {
+                    // рисуем квадрат scale x scale вместо одного пикселя
                     for sy in 0..scale {
                         for sx in 0..scale {
                             fb.put_pixel(px + bit * scale + sx, py + row * scale + sy, fg);
@@ -419,6 +452,7 @@ pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize)
     }
     x - px
 }
+
 
 pub struct Writer;
 

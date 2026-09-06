@@ -62,7 +62,7 @@ unsafe extern "C" fn kmain() -> ! {
     random::init();
     time::init();
 
-    banner::show();
+    
 
     print_color!(GRAY, "booting...\n");
     print_color!(GREEN, "[ok]");
@@ -73,7 +73,7 @@ unsafe extern "C" fn kmain() -> ! {
     println!(" filesystem mounted");
 
     login::run();
-
+    banner::show();
     shell::run();
 }
 

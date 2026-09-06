@@ -1,4 +1,7 @@
-// desktop.rs - рабочий стол на оконном менеджере (wm.rs)
+// desktop.rs — рабочий стол на оконном менеджере (wm.rs)
+// раньше был гигантский цикл с match по типу приложения
+// теперь активное окно это Box<dyn Widget> а менеджер раздаёт ему события
+// добавить приложение = impl Widget + иконка сам цикл трогать не надо
 
 use crate::framebuffer::{self, draw_text_at, fill_rect, draw_rect};
 use crate::keyboard;
@@ -13,6 +16,7 @@ enum App {
     Terminal, Browser, Clock, Calc, Paint,
 }
 
+// цвета рабочего стола
 const DESKTOP: u32 = 0x008080;
 const WIN_FACE: u32 = 0xC0C0C0;
 const WIN_LIGHT: u32 = 0xFFFFFF;
@@ -29,6 +33,7 @@ fn bevel(x: usize, y: usize, w: usize, h: usize, raised: bool) {
     fill_rect(x + w - 2, y, 2, h, br);
 }
 
+// иконка приложения на столе
 struct Icon { x: usize, y: usize, label: &'static str, app: App }
 
 impl Icon {
@@ -87,6 +92,7 @@ fn draw_desktop(icons: &[Icon]) {
     draw_text_at("IluminOS", 8, h - 24 + 8, BLACK);
 }
 
+// заголовок окна приложения
 fn app_title(app: App) -> &'static str {
     match app {
         App::Terminal => "Terminal",
@@ -109,6 +115,7 @@ fn spawn(app: App, c: Rect) -> Box<dyn Widget> {
     }
 }
 
+// главный цикл GUI
 pub fn run() {
     mouse::init();
     let (sw, sh) = framebuffer::dimensions();
@@ -141,6 +148,7 @@ pub fn run() {
         mouse::poll();
         let (mx, my, left, _right) = mouse::get();
 
+        // движение мыши
         if mx != last_mx || my != last_my {
             if active.is_some() && left {
                 // drag (кисть Paint)
@@ -159,6 +167,7 @@ pub fn run() {
             last_my = my;
         }
 
+        // tick для часов
         if let Some(w) = active.as_mut() {
             if tick_frame % 40000 == 0 && wm::route_tick(w.as_mut()) {
                 framebuffer::restore_under_cursor();
@@ -206,6 +215,7 @@ pub fn run() {
         }
         last_left = left;
 
+        // клавиатура
         if let Some(key) = keyboard::try_read_key() {
             if key == 0x1b {
                 return;

@@ -9,14 +9,13 @@ const WIN_FACE: u32 = 0xC0C0C0;
 const WIN_LIGHT: u32 = 0xFFFFFF;
 const WIN_DARK: u32 = 0x808080;
 const BLACK: u32 = 0x000000;
-const TERM_BG: u32 = 0x000000;
-const TERM_FG: u32 = 0x00FF00;
-// цвета логотипа Not-Google
-const NG_BLUE: u32 = 0x4488FF;
+const TERM_BG: u32 = 0x000000;   // фон терминала
+const TERM_FG: u32 = 0x00FF00;   // зелёный текст терминала
+const NG_BLUE: u32 = 0x4488FF;   // цвета логотипа Not-Google
 const NG_RED: u32 = 0xFF4444;
 const NG_YELLOW: u32 = 0xFFDD33;
 const NG_GREEN: u32 = 0x33CC66;
-const LINK: u32 = 0x0000EE;
+const LINK: u32 = 0x0000EE;      // синие ссылки
 
 fn bevel(x: usize, y: usize, w: usize, h: usize, raised: bool) {
     let (tl, br) = if raised { (WIN_LIGHT, WIN_DARK) } else { (WIN_DARK, WIN_LIGHT) };
@@ -47,6 +46,7 @@ impl Clock {
 
     pub fn redraw(&self) {
         fill_rect(self.cx, self.cy, self.cw, self.ch, 0x001020);
+        // реальное время работы из счётчика тактов процессора
         let elapsed = rdtsc().wrapping_sub(self.start_tsc);
         let secs = elapsed / self.tsc_per_sec;
         let h = (secs / 3600) % 24;
@@ -111,11 +111,13 @@ impl Calc {
 
     pub fn redraw(&self) {
         fill_rect(self.cx, self.cy, self.cw, self.ch, WIN_FACE);
+        // дисплей
         fill_rect(self.cx + 10, self.cy + 8, self.cw - 20, 28, 0x203020);
         draw_rect(self.cx + 10, self.cy + 8, self.cw - 20, 28, WIN_DARK);
         let tw = self.display.len() * 16;
         let dx = self.cx + self.cw - 14 - tw;
         draw_text_scaled(&self.display, dx, self.cy + 12, 0x66FF66, 2);
+        // кнопки
         for &(k, bx, by, bw, bh) in self.buttons.iter() {
             if k == 0 { continue; }
             fill_rect(bx, by, bw, bh, WIN_FACE);
@@ -218,11 +220,14 @@ impl Paint {
 
     // нарисовать только панель инструментов палитра и кнопки БЕЗ холста
     fn draw_toolbar(&self) {
+        // фон панели сверху до холста
         fill_rect(self.cx, self.cy, self.cw, self.canvas_y - self.cy, WIN_FACE);
+        // палитра
         for &(col, px, py) in self.palette.iter() {
             fill_rect(px, py, 28, 28, col);
             draw_rect(px, py, 28, 28, BLACK);
         }
+        // кнопка очистки справа
         let clx = self.cx + self.cw - 70;
         fill_rect(clx, self.cy + 8, 60, 28, WIN_FACE);
         bevel(clx, self.cy + 8, 60, 28, true);
@@ -246,6 +251,7 @@ impl Paint {
     // клик проверить палитру и кнопку очистки вернуть true если сменилось состояние
     // вернуть 0 ничего 1 сменился цвет только toolbar 2 очистка холста
     pub fn on_click(&mut self, mx: i32, my: i32) -> u8 {
+        // палитра - смена цвета
         for &(col, px, py) in self.palette.iter() {
             if mx >= px as i32 && mx < (px+28) as i32 && my >= py as i32 && my < (py+28) as i32 {
                 self.color = col;
@@ -253,6 +259,7 @@ impl Paint {
                 return 1;
             }
         }
+        // кнопка очистки
         let clx = self.cx + self.cw - 70;
         if mx >= clx as i32 && mx < (clx+60) as i32
             && my >= (self.cy+8) as i32 && my < (self.cy+36) as i32 {
@@ -330,6 +337,7 @@ impl Term {
             draw_text_at(line, self.cx + 2, self.cy + 2 + row * 10, TERM_FG);
             row += 1;
         }
+        // строка ввода с приглашением ">"
         draw_text_at(">", self.cx + 2, self.cy + 2 + row * 10, TERM_FG);
         draw_text_at(&self.input, self.cx + 2 + 8, self.cy + 2 + row * 10, TERM_FG);
     }
@@ -339,7 +347,7 @@ impl Term {
         let cmd = cmd.trim();
         let mut echo = String::from("> ");
         echo.push_str(cmd);
-        self.lines.push(echo);
+        self.lines.push(echo); // эхо введённой команды
         match cmd {
             "" => {}
             "help" => self.lines.push(String::from("commands help ver clear")),
@@ -354,7 +362,7 @@ impl Term {
     }
 }
 
-// Приложение "Not-Google" - шуточный браузер + просмотр html из файлов
+// Приложение "Not-Google" — шуточный браузер + просмотр html из файлов
 pub struct Browser {
     pub query: String,                    // поисковый запрос
     results: Vec<String>,             // фейковые результаты
@@ -380,7 +388,7 @@ impl Browser {
             self.render_html();
             return;
         }
-        fill_rect(self.cx, self.cy, self.cw, self.ch, 0xFFFFFF);
+        fill_rect(self.cx, self.cy, self.cw, self.ch, 0xFFFFFF); // белый фон
 
         // логотип Not-Google по центру, буквы разными цветами
         let logo_y = self.cy + 30;
@@ -398,6 +406,7 @@ impl Browser {
             lx += 8;
         }
 
+        // строка поиска
         let box_y = logo_y + 24;
         let box_x = self.cx + 30;
         let box_w = self.cw - 130;
@@ -413,6 +422,7 @@ impl Browser {
         draw_text_at("Search", btn_x + 8, box_y + 6, BLACK);
         self.search_btn = (btn_x, box_y, btn_w, 20);
 
+        // результаты или подсказка
         if self.searched {
             let mut ry = box_y + 40;
             draw_text_at("results for", self.cx + 10, ry, WIN_DARK);
@@ -427,17 +437,19 @@ impl Browser {
         }
     }
 
-    // поиск. Если запрос это *.html - открыть файл, иначе фейк-выдача
+    // поиск. Если запрос это *.html — открыть файл, иначе фейк-выдача
     pub fn do_search(&mut self) {
         let q = self.query.trim();
         if q.is_empty() {
             return;
         }
+        // имя html-файла -> открыть страницу
         if q.ends_with(".html") || q.ends_with(".htm") {
             let name = String::from(q);
             self.open_html(&name);
             return;
         }
+        // обычный поиск -> генерируем правдоподобные фейковые ссылки
         self.viewing_html = false;
         self.results.clear();
         let mut r1 = String::from("www.");
@@ -464,7 +476,7 @@ impl Browser {
         match fs::read(name, &mut buf) {
             Ok(size) => {
                 if let Ok(text) = core::str::from_utf8(&buf[..size]) {
-                    self.page_doc = Some(html::parse(text));
+                    self.page_doc = Some(html::parse(text)); // парсим (см. html.rs)
                     self.viewing_html = true;
                 }
             }
@@ -493,6 +505,7 @@ impl Browser {
         let max_cols = (self.cw - 16) / 8; // сколько символов влезает по ширине
         let mut y = self.cy + 20;
 
+        // каждый блок документа рисуем по очереди, двигая y вниз
         for block in &doc.blocks {
             // горизонтальная линейка <hr>
             if block.kind == html::BlockKind::Rule {
@@ -500,7 +513,7 @@ impl Browser {
                 y += 12;
                 continue;
             }
-            // пустой блок - просто отступ
+            // пустой блок — просто отступ
             if block.text.is_empty() {
                 y += 12;
                 continue;
@@ -520,14 +533,13 @@ impl Browser {
                     draw_text_at(&label, bx, y, BLACK);
                     startx = bx + 24;
                 } else {
-                    fill_rect(bx, y + 3, 4, 4, BLACK);
+                    fill_rect(bx, y + 3, 4, 4, BLACK); // буллет
                     startx = bx + 12;
                 }
             }
 
-            // ширина символа и высота строки с учётом масштаба
-            let char_w = 8 * block.scale;
-            let line_h = 10 * block.scale + 4;
+            let char_w = 8 * block.scale;       // ширина символа с учётом масштаба
+            let line_h = 10 * block.scale + 4;  // высота строки
 
             // сколько символов влезет в оставшуюся ширину
             let avail_cols = if char_w > 0 { (right_limit.saturating_sub(startx)) / char_w } else { max_cols };
@@ -546,20 +558,20 @@ impl Browser {
                 startx
             };
 
-            // если текст влезает - рисуем как есть
+            // если текст влезает — рисуем как есть
             if block.text.len() <= avail_cols || block.scale > 1 || block.center {
                 let width = draw_text_scaled(&block.text, draw_x, y, block.color, block.scale);
                 if block.underline || block.is_link {
-                    fill_rect(draw_x, y + 8 * block.scale, width, 1, block.color);
+                    fill_rect(draw_x, y + 8 * block.scale, width, 1, block.color); // подчёркивание ссылок
                 }
                 y += line_h;
             } else {
-                // длинный текст - перенос ПО СЛОВАМ (word wrap)
+                // длинный текст — перенос ПО СЛОВАМ (word wrap)
                 let words = block.text.split(' ');
                 let mut line = String::new();
                 for w in words {
                     let test_len = line.len() + w.len() + 1;
-                    // слово не влезает - печатаем накопленную строку и начинаем новую
+                    // слово не влезает — печатаем накопленную строку и начинаем новую
                     if test_len > avail_cols && !line.is_empty() {
                         draw_text_scaled(&line, startx, y, block.color, block.scale);
                         y += line_h;
@@ -568,6 +580,7 @@ impl Browser {
                     if !line.is_empty() { line.push(' '); }
                     line.push_str(w);
                 }
+                // остаток
                 if !line.is_empty() {
                     let width = draw_text_scaled(&line, startx, y, block.color, block.scale);
                     if block.underline || block.is_link {
@@ -577,7 +590,7 @@ impl Browser {
                 }
             }
 
-            // вышли за низ окна - прекращаем рисовать
+            // вышли за низ окна — прекращаем рисовать
             if y > self.cy + self.ch - 20 {
                 break;
             }
@@ -600,3 +613,4 @@ impl Browser {
     }
 }
 
+// заголовок окна для приложения

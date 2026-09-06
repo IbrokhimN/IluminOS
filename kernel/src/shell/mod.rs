@@ -271,7 +271,7 @@ println!("|  rand           [max]         Random number (hardware)  |");
 println!("|  cowsay         <text>        ASCII cow says text        |");
 println!("|  uptime / date                Time since boot           |");
 println!("|  whoami/hostname              System identity           |");
-println!("|  theme          dark|light    Switch color theme        |");
+println!("|  theme      everforest|dark|light Switch color theme    |");
 println!("|  history                      Show command history      |");
 println!("|  about                        System info & version     |");
 println!("|  gui                          Switch to graphic desktop |");
@@ -510,7 +510,13 @@ fn cmd_date() {
 
 fn cmd_theme(arg: &str) {
     match arg {
-        "dark" | "" => {
+        "everforest" | "" => {
+            framebuffer::set_theme(framebuffer::EVERFOREST_FOREGROUND, framebuffer::EVERFOREST_BACKGROUND);
+            framebuffer::clear();
+            crate::banner::show();
+            print_color!(GREEN, "theme: everforest\n");
+        }
+        "dark" => {
             framebuffer::set_theme(WHITE, framebuffer::BLACK);
             framebuffer::clear();
             crate::banner::show();
@@ -522,7 +528,7 @@ fn cmd_theme(arg: &str) {
             crate::banner::show();
             print_color!(GREEN, "theme: light\n");
         }
-        _ => print_color!(RED, "usage: theme dark|light\n"),
+        _ => print_color!(RED, "usage: theme everforest|dark|light\n"),
     }
 }
 
