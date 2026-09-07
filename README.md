@@ -1,6 +1,6 @@
-# IluminOS
+# IluminOS 🦀
 
-A 64-bit educational operating system written from scratch in Rust and running on bare metal (in QEMU). From boot and the login screen to a graphical interface with a browser and a network stack with `ping` — everything is implemented from scratch, without the standard library.
+A 64-bit educational operating system written from scratch in Rust and running on bare metal (in QEMU). From boot and the login screen to a graphical interface with a browser and a network stack with `ping` - everything is implemented from scratch, without the standard library.
 
 Around 6,000 lines of custom code across 28 modules.
 
@@ -10,25 +10,23 @@ https://github.com/user-attachments/assets/54edbe24-f3ee-44f6-a634-697f1c2de1c1
 
 ## What IluminOS Can Do
 
-- boots through the Limine bootloader in 64-bit mode
-- login screen with username and password verification
-- custom graphics output (font, colors, cursor, scrolling, banner, themes)
-- hand-written keyboard, mouse, and disk drivers
-- filesystem with dynamic block allocation, inodes, and directories
-- command shell with history, tab completion, and a large set of commands
-- vim-style text editor with syntax highlighting
-
-
-- dynamic memory (custom heap and allocator)
-- hardware-based random number generator
-- sound through the PC Speaker and a mini piano
-- htop-style system monitor
-- WebAssembly module execution (through the built-in `wasmi`)
-- custom interpreted programming language
-- Windows 3.1-style graphical shell with mouse support
-- Not-Google browser with HTML parsing and rendering
-- a set of applications: terminal, clock, calculator, and Paint
-- networking: RTL8139 NIC driver, PCI scanner, smoltcp stack, and working `ping`
+* boots through the Limine bootloader in 64-bit mode
+* login screen with username and password verification
+* custom graphics output (font, colors, cursor, scrolling, banner, themes)
+* hand-written keyboard, mouse, and disk drivers
+* filesystem with dynamic block allocation, inodes, and directories
+* command shell with history, tab completion, and a large set of commands
+* vim-style text editor with syntax highlighting
+* dynamic memory (custom heap and allocator)
+* hardware-based random number generator
+* sound through the PC Speaker and a mini piano
+* htop-style system monitor
+* WebAssembly module execution (through the built-in `wasmi`)
+* custom interpreted programming language
+* Windows 3.1-style graphical shell with mouse support
+* Not-Google browser with HTML parsing and rendering
+* a set of applications: terminal, clock, calculator, and Paint
+* networking: RTL8139 NIC driver, PCI scanner, smoltcp stack, and working `ping`
 
 ## Quick Start
 
@@ -40,12 +38,14 @@ Build and run (with disk and network card):
 make run QEMUFLAGS="-m 2G \
   -device piix3-ide,id=ide -drive id=disk,file=fs.img,format=raw,if=none -device ide-hd,drive=disk,bus=ide.0 \
   -netdev user,id=n0 -device rtl8139,netdev=n0"
+
 ```
 
 Or use the script:
 
 ```bash
 ./run.fish
+
 ```
 
 The `-device rtl8139` flag is required for `lspci`, `nic`, and `ping`. Without it, the system works, but networking is unavailable.
@@ -57,7 +57,7 @@ A login screen appears on startup. Demo account: `root` / `iluminos`.
 ### Filesystem
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `ls` | list files |
 | `pwd` | current path |
 | `cd <dir>` | change directory (`..` for parent, `/` for root) |
@@ -75,7 +75,7 @@ A login screen appears on startup. Demo account: `root` / `iluminos`.
 ### Execution and Development
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `run <file>` | execute a script written in the custom language |
 | `wasm` | run the built-in WebAssembly module |
 | `calc <expr>` | quick arithmetic |
@@ -84,7 +84,7 @@ A login screen appears on startup. Demo account: `root` / `iluminos`.
 ### System and Utilities
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `help` | list commands |
 | `about` | about the author and system |
 | `clear` | clear the screen |
@@ -93,7 +93,7 @@ A login screen appears on startup. Demo account: `root` / `iluminos`.
 | `cowsay <text>` | ASCII cow |
 | `uptime` / `date` | system uptime |
 | `whoami` / `hostname` | system identity |
-| `theme dark\|light` | switch theme |
+| `theme dark|light` | switch theme |
 | `history` | command history |
 | `htop` | system monitor |
 | `piano` | mini piano |
@@ -102,10 +102,10 @@ A login screen appears on startup. Demo account: `root` / `iluminos`.
 ### Networking
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `lspci` | find the RTL8139 network card on the PCI bus |
 | `nic` | initialize the card and read its MAC address |
-| `ping <ip>` | ICMP echo (e.g. `ping 10.0.2.2` — QEMU gateway) |
+| `ping <ip>` | ICMP echo (e.g. `ping 10.0.2.2` - QEMU gateway) |
 
 ## Architecture
 
@@ -113,75 +113,73 @@ The project consists of 28 modules, each responsible for its own subsystem.
 
 ### Boot and Output
 
-**main.rs** — `kmain` entry point. Declares Limine requests (framebuffer), initializes subsystems in order: allocator, random number generator, timekeeping, filesystem, displays the login screen, and starts the shell.
+**main.rs** - `kmain` entry point. Declares Limine requests (framebuffer), initializes subsystems in order: allocator, random number generator, timekeeping, filesystem, displays the login screen, and starts the shell.
 
-**framebuffer.rs** — all screen output. Limine provides a graphics framebuffer (an array of pixels), but there are no ready-made glyphs — every character is drawn pixel by pixel using the `font8x8` font table. Supports colors, cursor, scrolling, light and dark themes, as well as GUI drawing primitives (rectangles, borders, text at arbitrary positions, scalable text).
+**framebuffer.rs** - all screen output. Limine provides a graphics framebuffer (an array of pixels), but there are no ready-made glyphs - every character is drawn pixel by pixel using the `font8x8` font table. Supports colors, cursor, scrolling, light and dark themes, as well as GUI drawing primitives (rectangles, borders, text at arbitrary positions, scalable text).
 
-**banner.rs** — startup IluminOS ASCII banner with a color gradient.
+**banner.rs** - startup IluminOS ASCII banner with a color gradient.
 
-**login.rs** — login screen. Drawn pixel by pixel: a card with username and password fields, account verification, a shake animation on failure, and a sound chord on success.
+**login.rs** - login screen. Drawn pixel by pixel: a card with username and password fields, account verification, a shake animation on failure, and a sound chord on success.
 
 ### Drivers
 
-**port.rs** — reads and writes I/O ports through inline assembly (`inb`/`outb`, as well as `inw`/`outw` and 32-bit `inl`/`outl` for PCI). Written manually instead of using an external crate to remove a dependency incompatible with the modern compiler.
+**port.rs** - reads and writes I/O ports through inline assembly (`inb`/`outb`, as well as `inw`/`outw` and 32-bit `inl`/`outl` for PCI). Written manually instead of using an external crate to remove a dependency incompatible with the modern compiler.
 
-**keyboard.rs** — PS/2 keyboard driver using polling. Reads scan codes, converts them to characters, handles Shift, Caps Lock, and arrow keys. Distinguishes keyboard and mouse bytes using a status bit.
+**keyboard.rs** - PS/2 keyboard driver using polling. Reads scan codes, converts them to characters, handles Shift, Caps Lock, and arrow keys. Distinguishes keyboard and mouse bytes using a status bit.
 
-**mouse.rs** — PS/2 mouse driver. Initializes the controller's second channel, reads 3-byte packets (buttons and offsets), and moves the cursor.
+**mouse.rs** - PS/2 mouse driver. Initializes the controller's second channel, reads 3-byte packets (buttons and offsets), and moves the cursor.
 
-**ata.rs** — disk driver (ATA PIO). Reads and writes sectors through ports with timeouts. Works with the piix3-ide controller.
+**ata.rs** - disk driver (ATA PIO). Reads and writes sectors through ports with timeouts. Works with the piix3-ide controller.
 
 ### Data Storage
 
-**fs.rs** — filesystem. Dynamic block allocation through a bitmap, inodes with variable file sizes, and directory hierarchy through a parent pointer. Supports a current working directory and path construction.
+**fs.rs** - filesystem. Dynamic block allocation through a bitmap, inodes with variable file sizes, and directory hierarchy through a parent pointer. Supports a current working directory and path construction.
 
-**allocator.rs** — heap and global allocator. Provides dynamic memory (`Vec`, `String`, `Box`) through `linked_list_allocator` over a static heap region.
+**allocator.rs** - heap and global allocator. Provides dynamic memory (`Vec`, `String`, `Box`) through `linked_list_allocator` over a static heap region.
 
-**random.rs** — random number generator based on the CPU cycle counter (`rdtsc`) as an entropy source and `xorshift64` as the PRNG.
+**random.rs** - random number generator based on the CPU cycle counter (`rdtsc`) as an entropy source and `xorshift64` as the PRNG.
 
-**time.rs** — system uptime tracking through the cycle counter: uptime in seconds, split into hours, minutes, and seconds.
+**time.rs** - system uptime tracking through the cycle counter: uptime in seconds, split into hours, minutes, and seconds.
 
 ### Shell and Editor
 
-**shell.rs** — command shell (REPL). Reads a command, executes it, and prints the result. The prompt shows the command counter and current path. Includes history (up/down arrows), Tab completion, and a blinking cursor.
+**shell.rs** - command shell (REPL). Reads a command, executes it, and prints the result. The prompt shows the command counter and current path. Includes history (up/down arrows), Tab completion, and a blinking cursor.
 
-**editor.rs** — vim-style text editor. Three modes (normal, insert, command), hjkl navigation, `dd`, `dw`, `x`, `o` commands, Rust syntax highlighting, and saving through `:w` / `:wq`.
+**editor.rs** - vim-style text editor. Three modes (normal, insert, command), hjkl navigation, `dd`, `dw`, `x`, `o` commands, Rust syntax highlighting, and saving through `:w` / `:wq`.
 
 ### Sound
 
-**sound.rs** — sound through the PC Speaker: configure the PIT to the desired frequency, note table, and short tones.
+**sound.rs** - sound through the PC Speaker: configure the PIT to the desired frequency, note table, and short tones.
 
-**piano.rs** — mini piano in the console: keys are converted into notes and played through the PC Speaker.
+**piano.rs** - mini piano in the console: keys are converted into notes and played through the PC Speaker.
 
 ### Monitoring
 
-**monitor.rs** — htop-style system monitor: uptime, heap and disk usage shown as graphical bars, file count, and CPU cycles with periodic updates.
+**monitor.rs** - htop-style system monitor: uptime, heap and disk usage shown as graphical bars, file count, and CPU cycles with periodic updates.
 
 ### Program Execution
 
-**wasm.rs** — WebAssembly execution through the built-in `wasmi` interpreter. A compiled module with `add`, `factorial`, and `fib` functions runs inside the OS on bare metal.
+**wasm.rs** - WebAssembly execution through the built-in `wasmi` interpreter. A compiled module with `add`, `factorial`, and `fib` functions runs inside the OS on bare metal.
 
-**script.rs** — interpreter for the custom mini-language. A tokenizer and recursive-descent parser with correct operator precedence. Supports variables (`let`), output (`print`), and arithmetic with parentheses. The same parser powers the `calc` command.
+**script.rs** - interpreter for the custom mini-language. A tokenizer and recursive-descent parser with correct operator precedence. Supports variables (`let`), output (`print`), and arithmetic with parentheses. The same parser powers the `calc` command.
 
 ### Graphical Interface
 
-**gui.rs** — Windows 3.1-style graphical shell. Desktop with icons, windows with title bars and 3D borders, close buttons, and mouse event routing. Contains the terminal, Not-Google browser, clock, calculator, and Paint.
+**gui.rs** - Windows 3.1-style graphical shell. Desktop with icons, windows with title bars and 3D borders, close buttons, and mouse event routing. Contains the terminal, Not-Google browser, clock, calculator, and Paint.
 
-**html.rs** — parser for an HTML subset. Supports h1-h6 headings, paragraphs, formatting (b, i, u, code), color (`font color`), lists (ul, ol, li), links, quotes, and separators. Produces a list of blocks for rendering.
+**html.rs** - parser for an HTML subset. Supports h1-h6 headings, paragraphs, formatting (b, i, u, code), color (`font color`), lists (ul, ol, li), links, quotes, and separators. Produces a list of blocks for rendering.
 
-**apps.rs** — GUI applications: clock (uptime through the cycle counter), calculator (state machine, mouse control), and Paint (raster editor with a palette and mouse drawing).
-
-![Графическая оболочка IluminOS](https://raw.githubusercontent.com/IbrokhimN/IluminOS/refs/heads/main/docs/gui.png)
+**apps.rs** - GUI applications: clock (uptime through the cycle counter), calculator (state machine, mouse control), and Paint (raster editor with a palette and mouse drawing).
 
 ### Networking
 
-**tcp/** — networking subsystem:
+**tcp/** - networking subsystem:
 
-- **pci.rs** — PCI bus scanner: finds a device by vendor/device, reads BAR0 and IRQ, and enables bus mastering.
-- **rtl8139.rs** — RTL8139 network card driver using polling (without interrupts): reset, receive ring buffer, frame transmission and reception, and MAC address reading.
-- **device.rs** — layer between the driver and the smoltcp stack through the `Device` trait.
-- **net.rs** — smoltcp stack on top of the card: interface configuration, ICMP socket, and `ping` command.
-- **interrupts.rs** — IDT and IRQ skeleton for switching from polling to interrupts (not connected yet).
+* **pci.rs** - PCI bus scanner: finds a device by vendor/device, reads BAR0 and IRQ, and enables bus mastering.
+* **rtl8139.rs** - RTL8139 network card driver using polling (without interrupts): reset, receive ring buffer, frame transmission and reception, and MAC address reading.
+* **device.rs** - layer between the driver and the smoltcp stack through the `Device` trait.
+* **net.rs** - smoltcp stack on top of the card: interface configuration, ICMP socket, and `ping` command.
+* **interrupts.rs** - IDT and IRQ skeleton for switching from polling to interrupts (not connected yet).
 
 ## Key Technical Decisions
 
@@ -207,7 +205,7 @@ Files in the filesystem are size-limited, and there is no way to load a binary m
 
 ### Why Double Buffering Is Not Used
 
-Full double buffering requires copying the entire screen every frame. On bare metal without graphics acceleration, this copying is performed by the CPU and is too slow (causing a noticeable drop in frame rate). Therefore, partial redraw is used — only the changed area is updated (for example, the area under the mouse cursor).
+Full double buffering requires copying the entire screen every frame. On bare metal without graphics acceleration, this copying is performed by the CPU and is too slow (causing a noticeable drop in frame rate). Therefore, partial redraw is used - only the changed area is updated (for example, the area under the mouse cursor).
 
 ### Why Sound May Not Be Audible
 
@@ -265,17 +263,18 @@ nic                     read MAC address
 ping 10.0.2.2           ping the QEMU gateway
 edit page.html          write HTML: <h1>Hello</h1><p>text</p>
 gui                     graphical mode
+
 ```
 
 In graphical mode:
 
-- click the Terminal icon — terminal in a window
-- click Not-Google — browser, enter `page.html` and press Search to render
-- click Clock — clock
-- click Calc — calculator (click the buttons with the mouse)
-- click Paint — draw with the mouse using the palette
-- click `[x]` — close the window
-- Esc — return to the console
+* click the Terminal icon - terminal in a window
+* click Not-Google - browser, enter `page.html` and press Search to render
+* click Clock - clock
+* click Calc - calculator (click the buttons with the mouse)
+* click Paint - draw with the mouse using the palette
+* click `[x]` - close the window
+* Esc - return to the console
 
 ## Project Structure
 
@@ -311,22 +310,23 @@ kernel/src/
     net.rs        smoltcp stack and ping
     interrupts.rs IDT/IRQ skeleton
   demo.wasm       embedded wasm module
+
 ```
 
 Dependencies: `limine`, `spin`, `font8x8`, `linked_list_allocator`, `wasmi`, `smoltcp`.
 
 ## Possible Future Improvements
 
-- interrupts (IDT table, handlers) instead of polling — the skeleton is already in place
-- interrupt- and timer-based multitasking
-- further networking: ARP/DHCP, TCP, DNS, simple HTTP client
-- indirect blocks in inodes for large files
-- clickable links in the browser, navigation between pages
-- save Paint drawings to a file
-- games as GUI applications
+* interrupts (IDT table, handlers) instead of polling - the skeleton is already in place
+* interrupt- and timer-based multitasking
+* further networking: ARP/DHCP, TCP, DNS, simple HTTP client
+* indirect blocks in inodes for large files
+* clickable links in the browser, navigation between pages
+* save Paint drawings to a file
+* games as GUI applications
 
 ## Author
 
-**Ibrokhim Nurullaev** — [github.com/IbrokhimN](https://github.com/IbrokhimN)
+**Ibrokhim Nurullaev** - [github.com/IbrokhimN](https://github.com/IbrokhimN)
 
-Educational project: an operating system demonstrating systems programming in Rust — from booting on bare metal to a graphical interface with a browser and a network stack.
+Educational project: an operating system demonstrating systems programming in Rust - from booting on bare metal to a graphical interface with a browser and a network stack.
