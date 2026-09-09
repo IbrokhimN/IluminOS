@@ -6,16 +6,11 @@ pub const KEY_ENTER: u8 = b'\n';
 pub const KEY_BACKSPACE: u8 = 0x08;
 pub const KEY_ESC: u8 = 0x1b;
 pub const KEY_TAB: u8 = 0x09;
-// спец-коды вне печатного диапазона для стрелок (editor их игнорирует)
 pub const KEY_UP: u8 = 0x11;
 pub const KEY_DOWN: u8 = 0x12;
 pub const KEY_LEFT: u8 = 0x13;
 pub const KEY_RIGHT: u8 = 0x14;
 
-// раскладка клавиатуры. буквы кодируются байтами шрифта ruscii_8x8
-// (он же по сути cp866: кириллица в верхней половине таблицы), поэтому
-// достаточно просто отдавать нужный байт — framebuffer рисует глиф по
-// индексу без всякого юникода
 #[derive(Clone, Copy, PartialEq)]
 enum Layout {
     En,
@@ -50,8 +45,6 @@ pub fn layout_name() -> &'static str {
     }
 }
 
-// прикольные символы из ruscii_8x8 (глиф-индексы 0x01..0x0f — смайлики,
-// карточные масти, ноты, солнце) — вешаем на ctrl+alt+ряд цифр 1..9,0
 static FUN_SYMBOLS: [u8; 10] = [
     0x01, // 1 -> ☺
     0x02, // 2 -> ☻
@@ -65,7 +58,6 @@ static FUN_SYMBOLS: [u8; 10] = [
     0x0f, // 0 -> ☼
 ];
 
-// есть ли готовый байт в буфере клавиатуры без ожидания
 pub fn has_key() -> bool {
     let status = inb(0x64);
     // есть данные бит 0 и это НЕ мышь бит 0x20 равен 0
@@ -82,7 +74,6 @@ fn process_one() -> Option<u8> {
         return None;
     }
 
-    // если предыдущий байт был 0xe0 — это расширенная клавиша
     {
         let mut s = STATE.lock();
         if s.extended {
@@ -96,7 +87,6 @@ fn process_one() -> Option<u8> {
                 _ => {}
             }
             drop(s);
-            // отпускание (bit7) прочих расширенных клавиш игнорируем
             if released {
                 return None;
             }
@@ -144,7 +134,6 @@ fn process_one() -> Option<u8> {
         0x1c => Some(KEY_ENTER),
         0x0e => Some(KEY_BACKSPACE),
         0x01 => Some(KEY_ESC),
-        // win+space — переключить раскладку en/ru
         0x39 => {
             let mut s = STATE.lock();
             if s.win {
@@ -157,7 +146,6 @@ fn process_one() -> Option<u8> {
                 Some(b' ')
             }
         }
-        // ctrl+alt+ряд цифр — прикольные символы из шрифта, не зависят от раскладки
         0x02..=0x0b => {
             let s = STATE.lock();
             if s.ctrl && s.alt {
@@ -270,12 +258,6 @@ fn letter(base: u8, upper: bool) -> u8 {
     }
 }
 
-// русская раскладка (йцукен, физические позиции как в windows).
-// байты — индексы глифов в ruscii_8x8.psfu: заглавные а-я лежат на
-// 0x80-0x9f, строчные а-п на 0xa0-0xaf, строчные р-я на 0xe0-0xef,
-// ё/Ё отдельно на 0xf0/0xf1. цифровой ряд и его shift-символы
-// намеренно оставлены как в en раскладке — в этом варианте шрифта
-// нет глифа "№", так что не переизобретаем то чего нет в ruscii_8x8
 fn ru_scancode(code: u8, shift: bool, upper: bool) -> Option<u8> {
     let cyr = |lower: u8, upper_byte: u8| if upper { upper_byte } else { lower };
     match code {
