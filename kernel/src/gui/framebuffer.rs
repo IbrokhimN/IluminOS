@@ -1,7 +1,5 @@
-// framebuffer вывод заменяет vga text mode рисуем глифы шрифтом 8x8 в пиксели
 use core::fmt;
-use spin::Mutex;
-use font8x8::legacy::BASIC_LEGACY;
+use spin::{Mutex, Once};
 
 // написал цвета справа потому что мой нвим показывает цвета написанных юникодов
 // и мне так удобнее
@@ -31,6 +29,84 @@ pub const EVERFOREST_CYAN: u32         =   0x83C092;  // #83c092
 pub const EVERFOREST_WHITE: u32        =   0xD3C6AA;  // #d3c6aa
 
 
+// файл шрифта зашивается прямо в бинарь на этапе компиляции
+static FONT_BYTES: &[u8] = include_bytes!("./fonts/ruscii_8x8.psfu");
+
+struct PsfFont {
+    width: usize,
+    height: usize,
+    bytes_per_row: usize, // сколько байт занимает одна строка глифа
+    glyph_size: usize,    // размер одного глифа в байтах
+    glyphs_offset: usize, // с какого байта в файле начинаются сами глифы
+    num_glyphs: usize,
+}
+
+impl PsfFont {
+    fn parse(data: &[u8]) -> Self {
+        if data.len() >= 4 && data[0] == 0x36 && data[1] == 0x04 {
+            let mode = data[2];
+            let charsize = data[3] as usize;
+            let num_glyphs = if mode & 0x01 != 0 { 512 } else { 256 };
+            return PsfFont {
+                width: 8,
+                height: charsize,
+                bytes_per_row: 1,
+                glyph_size: charsize,
+                glyphs_offset: 4,
+                num_glyphs,
+            };
+        }
+        // PSF2: магия 0x72 0xb5 0x4a 0x86, дальше заголовок из u32 le полей
+        if data.len() >= 32 && data[0] == 0x72 && data[1] == 0xb5 && data[2] == 0x4a && data[3] == 0x86 {
+            let rd = |o: usize| -> usize {
+                u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]) as usize
+            };
+            let headersize = rd(8);
+            let length = rd(16);
+            let charsize = rd(20);
+            let height = rd(24);
+            let width = rd(28);
+            let bytes_per_row = (width + 7) / 8;
+            return PsfFont {
+                width,
+                height,
+                bytes_per_row,
+                glyph_size: charsize,
+                glyphs_offset: headersize,
+                num_glyphs: length,
+            };
+        }
+        // не смогли распознать файл - фолбек 8x16 пустышка чтобы не паниковать
+        PsfFont { width: 8, height: 16, bytes_per_row: 1, glyph_size: 16, glyphs_offset: 0, num_glyphs: 0 }
+    }
+
+    #[inline]
+    fn glyph(&self, ch: u8) -> &'static [u8] {
+        // юникод-таблицу PSF (если она есть в файле) не разбираем, индексируем
+        // глиф напрямую кодом символа, как было с BASIC_LEGACY
+        let idx = if (ch as usize) < self.num_glyphs { ch as usize } else { 0 };
+        let start = self.glyphs_offset + idx * self.glyph_size;
+        let end = start + self.glyph_size;
+        &FONT_BYTES[start..end]
+    }
+
+    #[inline]
+    fn bit_set(&self, glyph: &[u8], x: usize, y: usize) -> bool {
+        // в psf строка глифа хранится msb-первым
+        let byte = glyph[y * self.bytes_per_row + x / 8];
+        let bit = 7 - (x % 8);
+        (byte & (1 << bit)) != 0
+    }
+}
+
+static FONT: Once<PsfFont> = Once::new();
+
+#[inline]
+fn font() -> &'static PsfFont {
+    FONT.call_once(|| PsfFont::parse(FONT_BYTES))
+}
+
+
 struct Fb {
     addr: *mut u8,
     width: usize,
@@ -45,7 +121,6 @@ struct Fb {
 
 static FB: Mutex<Option<Fb>> = Mutex::new(None);
 
-// тема: дефолтный цвет текста и фона. print_color! сбрасывает fg в этот цвет.
 static THEME_FG: Mutex<u32> = Mutex::new(EVERFOREST_FOREGROUND);
 
 // вернуть текущий дефолтный цвет текста темы
@@ -53,7 +128,7 @@ pub fn theme_fg() -> u32 {
     *THEME_FG.lock()
 }
 
-// поставить тему: dark = белый текст на чёрном, light = чёрный текст на белом
+// поставить тему: dark = белый текст на чёрном lgiht = чёрный текст на белом
 pub fn set_theme(fg: u32, bg: u32) {
     *THEME_FG.lock() = fg;
     let mut guard = FB.lock();
@@ -63,12 +138,11 @@ pub fn set_theme(fg: u32, bg: u32) {
     }
 }
 
-const GLYPH_W: usize = 8;
-const GLYPH_H: usize = 8;
-
 unsafe impl Send for Fb {}
 
 pub fn init(addr: *mut u8, width: usize, height: usize, pitch: usize) {
+    // прогреваем парсинг шрифта заранее чтобы первый print! не тормозил
+    font();
     let mut guard = FB.lock();
     *guard = Some(Fb {
         addr,
@@ -98,12 +172,13 @@ pub fn set_color(color: u32) {
 pub fn draw_edit_cursor(col: usize, row: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        let px = col * GLYPH_W;
-        let py = row * GLYPH_H;
+        let f = font();
+        let px = col * f.width;
+        let py = row * f.height;
         let fg = fb.fg;
         // нижние 2 строки пикселей клетки
-        for y in (GLYPH_H - 2)..GLYPH_H {
-            for x in 0..GLYPH_W {
+        for y in (f.height - 2)..f.height {
+            for x in 0..f.width {
                 fb.put_pixel(px + x, py + y, fg);
             }
         }
@@ -139,30 +214,32 @@ impl Fb {
     }
 
     fn cols(&self) -> usize {
-        self.width / GLYPH_W
+        self.width / font().width
     }
 
     fn rows(&self) -> usize {
-        self.height / GLYPH_H
+        self.height / font().height
     }
 
     fn draw_glyph(&mut self, ch: u8, cx: usize, cy: usize) {
-        let glyph = BASIC_LEGACY[ch as usize];
-        let px = cx * GLYPH_W;
-        let py = cy * GLYPH_H;
-        for (row, bits) in glyph.iter().enumerate() {
-            for bit in 0..8 {
-                let color = if bits & (1 << bit) != 0 { self.fg } else { self.bg };
-                self.put_pixel(px + bit, py + row, color);
+        let f = font();
+        let glyph = f.glyph(ch);
+        let px = cx * f.width;
+        let py = cy * f.height;
+        for row in 0..f.height {
+            for col in 0..f.width {
+                let color = if f.bit_set(glyph, col, row) { self.fg } else { self.bg };
+                self.put_pixel(px + col, py + row, color);
             }
         }
     }
 
     fn fill_cell(&mut self, cx: usize, cy: usize, color: u32) {
-        let px = cx * GLYPH_W;
-        let py = cy * GLYPH_H;
-        for y in 0..GLYPH_H {
-            for x in 0..GLYPH_W {
+        let f = font();
+        let px = cx * f.width;
+        let py = cy * f.height;
+        for y in 0..f.height {
+            for x in 0..f.width {
                 self.put_pixel(px + x, py + y, color);
             }
         }
@@ -178,17 +255,27 @@ impl Fb {
     }
 
     fn scroll(&mut self) {
-        let line_bytes = self.pitch * GLYPH_H;
+        let line_bytes = self.pitch * font().height;
         let total = self.pitch * self.height;
         unsafe {
             let src = self.addr.add(line_bytes);
             let dst = self.addr;
+            // Перемещаем старые пиксели вверх
             core::ptr::copy(src, dst, total - line_bytes);
-            let last = self.addr.add(total - line_bytes);
-            core::ptr::write_bytes(last, 0, line_bytes);
+
+            // Заполняем новую нижнюю строку фоновым цветом self.bg
+            let start_y = self.height - font().height;
+            let bg = self.bg;
+
+            for y in start_y..self.height {
+                for x in 0..self.width {
+                    let offset = y * self.pitch + x * 4;
+                    self.addr.add(offset).cast::<u32>().write_volatile(bg);
+                }
+            }
         }
     }
-
+    
     fn write_char(&mut self, c: u8) {
         match c {
             b'\n' => self.newline(),
@@ -315,11 +402,12 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
 pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        let glyph = BASIC_LEGACY[(ch & 0x7f) as usize];
-        for (row, bits) in glyph.iter().enumerate() {
-            for bit in 0..8 {
-                if bits & (1 << bit) != 0 {
-                    fb.put_pixel(px + bit, py + row, fg);
+        let f = font();
+        let glyph = f.glyph(ch);
+        for row in 0..f.height {
+            for col in 0..f.width {
+                if f.bit_set(glyph, col, row) {
+                    fb.put_pixel(px + col, py + row, fg);
                 }
             }
         }
@@ -329,9 +417,10 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
 // нарисовать строку в пиксельной позиции
 pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     let mut x = px;
+    let w = font().width;
     for b in text.bytes() {
         draw_char_at(b, x, py, fg);
-        x += 8;
+        x += w;
     }
 }
 
@@ -427,14 +516,15 @@ pub fn restore_under_cursor() {
 pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        let glyph = BASIC_LEGACY[(ch & 0x7f) as usize];
-        for (row, bits) in glyph.iter().enumerate() {
-            for bit in 0..8 {
-                if bits & (1 << bit) != 0 {
+        let f = font();
+        let glyph = f.glyph(ch);
+        for row in 0..f.height {
+            for col in 0..f.width {
+                if f.bit_set(glyph, col, row) {
                     // рисуем квадрат scale x scale вместо одного пикселя
                     for sy in 0..scale {
                         for sx in 0..scale {
-                            fb.put_pixel(px + bit * scale + sx, py + row * scale + sy, fg);
+                            fb.put_pixel(px + col * scale + sx, py + row * scale + sy, fg);
                         }
                     }
                 }
@@ -446,9 +536,10 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
 // нарисовать строку с масштабом вернуть ширину в пикселях
 pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize) -> usize {
     let mut x = px;
+    let w = font().width;
     for b in text.bytes() {
         draw_char_scaled(b, x, py, fg, scale);
-        x += 8 * scale;
+        x += w * scale;
     }
     x - px
 }

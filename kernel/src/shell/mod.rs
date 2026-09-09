@@ -581,7 +581,11 @@ fn cmd_about() {
     print_color!(GREEN, "IluminOS ");
     println!("v0.2");
     print_color!(GRAY, "a tiny 64-bit OS in Rust by IbrokhimN\n");
-    print_color!(GRAY, "framebuffer + fs + wasm + gui\n");
+    print_color!(MAGENTA, "will be glad to see PRs :)\n");
+    print_color!(MAGENTA, "made with ");
+    print_color!(RED, "<3 \n");
+
+
 }
 
 fn cmd_tree() {
