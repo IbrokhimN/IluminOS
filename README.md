@@ -29,9 +29,10 @@ https://github.com/user-attachments/assets/54edbe24-f3ee-44f6-a634-697f1c2de1c1
 * networking: RTL8139 NIC driver, PCI scanner, smoltcp stack, and working `ping`
 
 ## Quick Start
-
-Requirements: Rust nightly with the `x86_64-unknown-none` target, QEMU, and Limine.
-
+``` bash
+chmod +x install.sh
+./install.sh
+```
 Build and run (with disk and network card):
 
 ```bash
