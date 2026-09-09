@@ -73,7 +73,7 @@ pub fn run() {
                 }
                 error = false;
             }
-            0x20..=0x7e => {
+            0x20..=0x7e | 0x80..=0xff => {
                 match field {
                     Field::User => if username.len() < 20 { username.push(key as char); }
                     Field::Pass => if password.len() < 20 { password.push(key as char); }

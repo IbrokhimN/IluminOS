@@ -352,7 +352,7 @@ impl Widget for Term {
                 self.input.pop();
                 true
             }
-            0x20..=0x7e => {
+            0x20..=0x7e | 0x80..=0xff => {
                 self.input.push(key as char);
                 true
             }
@@ -393,7 +393,7 @@ impl Widget for Browser {
                 self.query.pop();
                 true
             }
-            0x20..=0x7e => {
+            0x20..=0x7e | 0x80..=0xff => {
                 self.query.push(key as char);
                 true
             }
@@ -506,7 +506,7 @@ impl TextField {
                 self.text.pop();
                 true
             }
-            0x20..=0x7e => {
+            0x20..=0x7e | 0x80..=0xff => {
                 if self.text.len() < self.max_len {
                     self.text.push(key as char);
                     true

@@ -121,7 +121,7 @@ fn read_line(buf: &mut [u8; LINE_MAX]) -> usize {
                         }
                     }
                 }
-                0x20..=0x7e => {
+                0x20..=0x7e | 0x80..=0xff => {
                     if len < LINE_MAX {
                         buf[len] = key;
                         len += 1;
@@ -581,10 +581,8 @@ fn cmd_about() {
     print_color!(GREEN, "IluminOS ");
     println!("v0.2");
     print_color!(GRAY, "a tiny 64-bit OS in Rust by IbrokhimN\n");
-    print_color!(MAGENTA, "will be glad to see PRs :)\n");
-    print_color!(MAGENTA, "made with ");
-    print_color!(RED, "<3 \n");
-
+    print_color!(MAGENTA, "will be glad to see PRs \x02\n");
+    print_color!(MAGENTA, "made with \x03\n");
 
 }
 

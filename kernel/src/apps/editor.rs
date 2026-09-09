@@ -151,7 +151,7 @@ impl Editor {
             }
             KEY_ENTER => self.insert_newline(),
             KEY_BACKSPACE => self.backspace(),
-            0x20..=0x7e => self.insert_char(key), // печатный символ
+            0x20..=0x7e | 0x80..=0xff => self.insert_char(key), // печатный символ (в т.ч. кириллица)
             _ => {} // стрелки и прочее игнорируем
         }
     }
@@ -165,7 +165,7 @@ impl Editor {
                 self.cmd_len = 0;
             }
             KEY_BACKSPACE => if self.cmd_len > 0 { self.cmd_len -= 1; },
-            0x20..=0x7e => if self.cmd_len < self.cmd.len() { // накапливаем команду
+            0x20..=0x7e | 0x80..=0xff => if self.cmd_len < self.cmd.len() { // накапливаем команду
                 self.cmd[self.cmd_len] = key;
                 self.cmd_len += 1;
             },

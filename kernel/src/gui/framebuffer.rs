@@ -289,7 +289,12 @@ impl Fb {
                 let (cx, cy) = (self.col, self.row);
                 self.draw_glyph(b' ', cx, cy);
             }
-            0x20..=0x7e => {
+            // 0x01-0x07 и 0x0b-0x0f — «прикольные» декоративные глифы из ruscii_8x8
+            // (смайлики, карточные масти, ноты, солнце, см. FUN_SYMBOLS в keyboard.rs).
+            // 0x08 (backspace), 0x09 (tab) и 0x0a (\n) сюда не входят — они
+            // остаются управляющими символами консоли.
+            // 0x80-0xff — кириллица (см. русскую раскладку в keyboard.rs)
+            0x01..=0x07 | 0x0b..=0x0f | 0x20..=0x7e | 0x80..=0xff => {
                 if self.col >= self.cols() {
                     self.newline();
                 }
@@ -415,11 +420,18 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
 }
 
 // нарисовать строку в пиксельной позиции
+//
+// важно: берём .chars(), а не .bytes() — наши байты-индексы глифов (в том
+// числе кириллица из ruscii_8x8, коды 0x80-0xff) хранятся в String через
+// `(байт as char).push(...)`, то есть каждый такой байт лежит в строке как
+// полноценный unicode-символ (и физически на диске/в памяти закодирован
+// 2 utf-8 байтами). char::as_u8 корректно достаёт обратно исходный байт,
+// а вот .bytes() отдал бы сырые utf-8 байты и всё сломал бы
 pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     let mut x = px;
     let w = font().width;
-    for b in text.bytes() {
-        draw_char_at(b, x, py, fg);
+    for c in text.chars() {
+        draw_char_at(c as u8, x, py, fg);
         x += w;
     }
 }
@@ -537,8 +549,8 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
 pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize) -> usize {
     let mut x = px;
     let w = font().width;
-    for b in text.bytes() {
-        draw_char_scaled(b, x, py, fg, scale);
+    for c in text.chars() {
+        draw_char_scaled(c as u8, x, py, fg, scale);
         x += w * scale;
     }
     x - px
@@ -551,8 +563,9 @@ impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut guard = FB.lock();
         if let Some(fb) = guard.as_mut() {
-            for b in s.bytes() {
-                fb.write_char(b);
+            // .chars() а не .bytes(), см. комментарий у draw_text_at
+            for c in s.chars() {
+                fb.write_char(c as u8);
             }
         }
         Ok(())
