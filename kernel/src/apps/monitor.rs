@@ -1,4 +1,4 @@
-// системный монитор в стиле htop команда htop
+// htop style system monitor
 
 use crate::framebuffer::{self, fill_rect, draw_text_at, dimensions};
 use crate::keyboard;
@@ -8,11 +8,11 @@ use crate::time;
 use crate::framebuffer::{GREEN, RED, YELLOW, CYAN, GRAY, WHITE};
 use alloc::string::String;
 
-const BAR_BG: u32 = 0x222222; // пустая часть бара
-const BORDER: u32 = 0x444444; // рамка бара
-const BG: u32 = 0x000000;     // фон
+const BAR_BG: u32 = 0x222222; // empty bar part
+const BORDER: u32 = 0x444444; // bar border
+const BG: u32 = 0x000000;     // background
 
-// координаты чтобы статику и динамику рисовать в одни места
+// coordinates so static and dynamic draw at the same spots
 const LEFT: usize = 20;
 const Y_UPTIME: usize = 60;
 const Y_MEM_LABEL: usize = 90;
@@ -25,9 +25,9 @@ const Y_FILES: usize = 210;
 const Y_CPU: usize = 228;
 const Y_SCREEN: usize = 246;
 
-// запуск крутится пока не нажмут q Esc
+// run loop until q or esc pressed
 pub fn run() {
-    // один раз фон подписи рамки
+    // draw static background labels once
     draw_static();
 
     let mut frame: u32 = 0;
@@ -37,7 +37,7 @@ pub fn run() {
                 break;
             }
         }
-        // обновляем только меняющиеся значения
+        // update only the changing values
         if frame % 400_000 == 0 {
             draw_dynamic();
         }
@@ -50,15 +50,15 @@ pub fn run() {
     crate::print_color!(GREEN, "monitor closed.\n");
 }
 
-// рисуем то что не меняется один раз
+// draw what never changes once
 fn draw_static() {
     let (w, h) = dimensions();
-    fill_rect(0, 0, w, h, BG); // единственная полная заливка
+    fill_rect(0, 0, w, h, BG); // only full clear
 
     draw_text_at("IluminOS System Monitor", LEFT, 20, GREEN);
     draw_text_at("[q] quit", w - 90, 20, GRAY);
 
-    // подписи метрик
+    // metric labels
     draw_text_at("Uptime:", LEFT, Y_UPTIME, CYAN);
     draw_text_at("Memory", LEFT, Y_MEM_LABEL, CYAN);
     draw_text_at("Disk", LEFT, Y_DISK_LABEL, CYAN);
@@ -67,11 +67,11 @@ fn draw_static() {
     draw_text_at("Screen:", LEFT, Y_SCREEN, CYAN);
 }
 
-// обновить только меняющиеся значения
+// update only changing values
 fn draw_dynamic() {
     let (w, _h) = dimensions();
     let bar_w = w - 60;
-    let val_x = LEFT + 80; // где начинаются значения
+    let val_x = LEFT + 80; // where values start
 
     // uptime
     let (uh, um, us) = time::uptime_hms();
@@ -79,17 +79,17 @@ fn draw_dynamic() {
     push_num(&mut up, uh as usize); up.push_str("h ");
     push_num2(&mut up, um as usize); up.push_str("m ");
     push_num2(&mut up, us as usize); up.push('s');
-    clear_val(val_x, Y_UPTIME, 160);          // затереть старое
+    clear_val(val_x, Y_UPTIME, 160);          // wipe old value
     draw_text_at(&up, val_x, Y_UPTIME, WHITE);
 
-    // память
+    // memory
     let mem_used = allocator::heap_used();
     let mem_total = allocator::heap_size();
     let mem_pct = percent(mem_used, mem_total);
     let mut mp = String::new(); push_num(&mut mp, mem_pct); mp.push('%');
     clear_val(LEFT + 64, Y_MEM_LABEL, 48);
     draw_text_at(&mp, LEFT + 64, Y_MEM_LABEL, load_color(mem_pct));
-    // бар сам себя перерисовывает
+    // bar redraws itself fully
     draw_bar(LEFT, Y_MEM_BAR, bar_w, mem_pct, load_color(mem_pct));
     let mut ml = String::new();
     push_num(&mut ml, mem_used / 1024); ml.push_str(" KB / ");
@@ -97,7 +97,7 @@ fn draw_dynamic() {
     clear_val(LEFT, Y_MEM_KB, bar_w);
     draw_text_at(&ml, LEFT, Y_MEM_KB, GRAY);
 
-    // диск
+    // disk
     let disk_used = fs::used_blocks() as usize;
     let disk_total = fs::total_blocks() as usize;
     let disk_pct = percent(disk_used, disk_total);
@@ -111,32 +111,32 @@ fn draw_dynamic() {
     clear_val(LEFT, Y_DISK_INFO, bar_w);
     draw_text_at(&dl, LEFT, Y_DISK_INFO, GRAY);
 
-    // файлы
+    // files
     let mut fc = 0usize;
     fs::list(|_n, _s, _d| { fc += 1; });
     let mut fl = String::new(); push_num(&mut fl, fc);
     clear_val(val_x, Y_FILES, 80);
     draw_text_at(&fl, val_x, Y_FILES, WHITE);
 
-    // такты CPU
+    // cpu ticks
     let ticks = time::ticks_since_boot();
     let mut cl = String::new(); push_num(&mut cl, ticks as usize); cl.push_str(" ticks");
     clear_val(val_x, Y_CPU, 200);
     draw_text_at(&cl, val_x, Y_CPU, GRAY);
 
-    // разрешение
+    // screen resolution
     let mut sl = String::new();
     push_num(&mut sl, w); sl.push('x'); push_num(&mut sl, _h);
     clear_val(val_x, Y_SCREEN, 120);
     draw_text_at(&sl, val_x, Y_SCREEN, GRAY);
 }
 
-// затереть маленькую область под значением
+// clear small area under a value
 fn clear_val(x: usize, y: usize, w: usize) {
     fill_rect(x, y, w, 10, BG);
 }
 
-// графический бар сам перерисовывается целиком
+// bar widget redraws itself fully
 fn draw_bar(x: usize, y: usize, w: usize, pct: usize, color: u32) {
     let bh = 12;
     fill_rect(x, y, w, bh, BORDER);

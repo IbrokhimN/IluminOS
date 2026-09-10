@@ -1,10 +1,10 @@
-// работа с портами ввода-вывода через ассемблерные вставки
+// io port access via inline asm
 
 use core::arch::asm;
 
 #[inline]
 pub fn inb(port: u16) -> u8 {
-    // прочитать байт из порта
+    // read byte from port
     let val: u8;
     unsafe {
         asm!("in al, dx", out("al") val, in("dx") port, options(nomem, nostack, preserves_flags));
@@ -14,7 +14,7 @@ pub fn inb(port: u16) -> u8 {
 
 #[inline]
 pub fn outb(port: u16, val: u8) {
-    // записать байт в порт
+    // write byte to port
     unsafe {
         asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
     }
@@ -22,7 +22,7 @@ pub fn outb(port: u16, val: u8) {
 
 #[inline]
 pub fn inw(port: u16) -> u16 {
-    // прочитать 16 бит
+    // read 16 bits
     let val: u16;
     unsafe {
         asm!("in ax, dx", out("ax") val, in("dx") port, options(nomem, nostack, preserves_flags));
@@ -32,7 +32,7 @@ pub fn inw(port: u16) -> u16 {
 
 #[inline]
 pub fn outw(port: u16, val: u16) {
-    // записать 16 бит
+    // write 16 bits
     unsafe {
         asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack, preserves_flags));
     }
@@ -40,7 +40,7 @@ pub fn outw(port: u16, val: u16) {
 
 #[inline]
 pub fn inl(port: u16) -> u32 {
-    // прочитать 32 бита (для PCI)
+    // read 32 bits for pci
     let val: u32;
     unsafe {
         core::arch::asm!("in eax, dx", out("eax") val, in("dx") port,
@@ -51,7 +51,7 @@ pub fn inl(port: u16) -> u32 {
 
 #[inline]
 pub fn outl(port: u16, val: u32) {
-    // записать 32 бита
+    // write 32 bits
     unsafe {
         core::arch::asm!("out dx, eax", in("dx") port, in("eax") val,
             options(nomem, nostack, preserves_flags));

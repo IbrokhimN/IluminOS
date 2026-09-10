@@ -1,21 +1,21 @@
-// драйвер сетевой карты RTL8139 версия без прерываний опрос
+// rtl8139 nic driver polling version no interrupts
 
 use crate::port::{inb, inw, outb, outw, outl};
 use crate::tcp::pci::{self, PciDevice};
 use spin::Mutex;
 
-// смещения регистров от io_base
-const REG_MAC0: u16 = 0x00;        // MAC карты 6 байт
-const REG_TSD0: u16 = 0x10;        // TX status дескрипторов 0..3
-const REG_TSAD0: u16 = 0x20;       // TX адрес дескрипторов 0..3
-const REG_RBSTART: u16 = 0x30;     // адрес буфера приёма
-const REG_CMD: u16 = 0x37;         // командный регистр
-const REG_CAPR: u16 = 0x38;        // докуда мы прочитали read ptr
-const REG_CBR: u16 = 0x3A;         // докуда карта записала write ptr
-const REG_IMR: u16 = 0x3C;         // маска прерываний
-const REG_ISR: u16 = 0x3E;         // статус прерываний
-const REG_RCR: u16 = 0x44;         // конфиг приёма
-const REG_CONFIG1: u16 = 0x52;     // питание карты
+// register offsets from io_base
+const REG_MAC0: u16 = 0x00;        // card mac 6 bytes
+const REG_TSD0: u16 = 0x10;        // tx status descriptors 0 to 3
+const REG_TSAD0: u16 = 0x20;       // tx address descriptors 0 to 3
+const REG_RBSTART: u16 = 0x30;     // rx buffer address
+const REG_CMD: u16 = 0x37;         // command register
+const REG_CAPR: u16 = 0x38;        // read pointer
+const REG_CBR: u16 = 0x3A;         // write pointer
+const REG_IMR: u16 = 0x3C;         // interrupt mask
+const REG_ISR: u16 = 0x3E;         // interrupt status
+const REG_RCR: u16 = 0x44;         // rx config
+const REG_CONFIG1: u16 = 0x52;     // card power config
 
 const CMD_RESET: u8 = 0x10;
 const CMD_RX_ENABLE: u8 = 0x08;
@@ -35,17 +35,17 @@ struct Rtl8139 {
 
 static DRIVER: Mutex<Option<Rtl8139>> = Mutex::new(None);
 
-// найти карту через PCI и настроить false если карты нет
+// find card via pci and configure it returns false if absent
 pub fn init() -> bool {
     let dev: PciDevice = match pci::find_device(pci::RTL8139_VENDOR, pci::RTL8139_DEVICE) {
         Some(d) => d,
         None => return false,
     };
 
-    // разрешить DMA
+    // enable dma
     pci::enable_bus_mastering(&dev);
 
-    // BAR0 -> базовый IO порт маскируем биты флаги
+    // bar0 to base io port mask flag bits
     let io_base = (dev.bar0 & 0xFFFC) as u16;
 
     let mut drv = Rtl8139 {
@@ -57,10 +57,10 @@ pub fn init() -> bool {
     };
 
     unsafe {
-        // питание карты
+        // power up the card
         outb(io_base + REG_CONFIG1, 0x00);
 
-        // программный сброс ждём пока бит reset сбросится
+        // software reset wait for reset bit to clear
         outb(io_base + REG_CMD, CMD_RESET);
         let mut tries = 0;
         while inb(io_base + REG_CMD) & CMD_RESET != 0 {
@@ -69,20 +69,20 @@ pub fn init() -> bool {
             core::hint::spin_loop();
         }
 
-        // адрес буфера приёма пока без paging виртуальный
+        // rx buffer address no paging yet so its virtual
         let rx_ptr = drv.rx_buffer.as_ptr() as u32;
         outl(io_base + REG_RBSTART, rx_ptr);
 
-        // какие события ловим
+        // which events to catch
         outw(io_base + REG_IMR, ISR_ROK | ISR_TOK);
 
-        // конфиг приёма принимать всё + wrap буфера
+        // rx config accept all and wrap buffer
         outl(io_base + REG_RCR, 0x0F | (1 << 7));
 
-        // включить приём и передачу
+        // enable rx and tx
         outb(io_base + REG_CMD, CMD_RX_ENABLE | CMD_TX_ENABLE);
 
-        // прочитать MAC
+        // read mac address
         for i in 0..6 {
             drv.mac[i] = inb(io_base + REG_MAC0 + i as u16);
         }
@@ -92,12 +92,12 @@ pub fn init() -> bool {
     true
 }
 
-// вернуть MAC карты
+// return card mac address
 pub fn mac_address() -> Option<[u8; 6]> {
     DRIVER.lock().as_ref().map(|d| d.mac)
 }
 
-// отправить кадр опросом true при успехе
+// send a frame by polling true on success
 pub fn send(data: &[u8]) -> bool {
     let mut guard = DRIVER.lock();
     let drv = match guard.as_mut() {
@@ -118,56 +118,53 @@ pub fn send(data: &[u8]) -> bool {
     true
 }
 
-// забрать один кадр опросом None пусто
-// карта пишет пакеты в кольцевой буфер формат
-// [2 байта статус][2 байта длина][данные][CRC]
-// CAPR докуда мы прочитали CBR докуда карта записала
+// fetch one frame by polling none if empty ring buffer format status length data crc
 pub fn receive(out: &mut [u8]) -> Option<usize> {
     let mut guard = DRIVER.lock();
     let drv = guard.as_mut()?;
     let io = drv.io_base;
     unsafe {
-        // сбросить флаги ISR иначе на QEMU карта не отдаёт следующие пакеты
+        // clear isr flags or qemu wont deliver next packets
         let isr = inw(io + REG_ISR);
         if isr != 0 {
             outw(io + REG_ISR, isr);
         }
 
-        // буфер пуст бит BUFE в CMD
+        // buffer empty bit in cmd
         if inb(io + REG_CMD) & 0x01 != 0 {
             return None;
         }
 
         let off = drv.rx_offset;
 
-        // заголовок пакета little endian
+        // packet header little endian
         let status = drv.rx_buffer[off] as u16
             | ((drv.rx_buffer[off + 1] as u16) << 8);
         let length = drv.rx_buffer[off + 2] as u16
             | ((drv.rx_buffer[off + 3] as u16) << 8);
 
-        // валидность бит 0 ROK + здравые границы длины
+        // validity check rok bit plus sane length bounds
         let rx_ok = status & 0x01 != 0;
         if !rx_ok || length < 4 || length as usize > 2048 {
-            // битый пакет сбросить приём
+            // bad packet reset receive
             drv.rx_offset = 0;
             outw(io + REG_CAPR, (0u16).wrapping_sub(0x10));
             return None;
         }
 
-        // скопировать данные без заголовка и CRC
-        let frame_len = (length as usize).saturating_sub(4); // отбросить CRC
-        let data_start = off + 4;                             // пропустить заголовок
+        // copy data without header and crc
+        let frame_len = (length as usize).saturating_sub(4); // drop crc
+        let data_start = off + 4;                             // skip header
         let n = frame_len.min(out.len());
         for i in 0..n {
-            // wrap индекс заворачивается по кольцу 8192
+            // index wraps around the 8192 ring
             out[i] = drv.rx_buffer[(data_start + i) % 8192];
         }
 
-        // сдвинуть offset на следующий пакет +4 заголовок выравнивание wrap
+        // advance offset to next packet align and wrap
         drv.rx_offset = ((off + length as usize + 4 + 3) & !3) % 8192;
 
-        // критично CAPR = offset - 16 иначе приём встаёт после первого пакета
+        // capr must be offset minus 16 or receive stalls after first packet
         outw(io + REG_CAPR, (drv.rx_offset as u16).wrapping_sub(0x10));
 
         Some(n)

@@ -1,7 +1,4 @@
-// desktop.rs — рабочий стол на оконном менеджере (wm.rs)
-// раньше был гигантский цикл с match по типу приложения
-// теперь активное окно это Box<dyn Widget> а менеджер раздаёт ему события
-// добавить приложение = impl Widget + иконка сам цикл трогать не надо
+// desktop built on the window manager active window is a boxed widget
 
 use crate::framebuffer::{self, draw_text_at, fill_rect, draw_rect};
 use crate::keyboard;
@@ -10,13 +7,13 @@ use crate::gui::widgets::apps::{Clock, Calc, Paint, Term, Browser};
 use crate::gui::wm::{self, Widget, WindowGeom, Rect};
 use alloc::boxed::Box;
 
-// какое приложение открыть
+// which app is open
 #[derive(PartialEq, Clone, Copy)]
 enum App {
     Terminal, Browser, Clock, Calc, Paint,
 }
 
-// цвета рабочего стола
+// desktop colors
 const DESKTOP: u32 = 0x008080;
 const WIN_FACE: u32 = 0xC0C0C0;
 const WIN_LIGHT: u32 = 0xFFFFFF;
@@ -33,7 +30,7 @@ fn bevel(x: usize, y: usize, w: usize, h: usize, raised: bool) {
     fill_rect(x + w - 2, y, 2, h, br);
 }
 
-// иконка приложения на столе
+// desktop icon
 struct Icon { x: usize, y: usize, label: &'static str, app: App }
 
 impl Icon {
@@ -80,7 +77,7 @@ impl Icon {
     }
 }
 
-// нарисовать стол фон иконки панель задач
+// draw desktop background icons and taskbar
 fn draw_desktop(icons: &[Icon]) {
     let (w, h) = framebuffer::dimensions();
     fill_rect(0, 0, w, h, DESKTOP);
@@ -92,7 +89,7 @@ fn draw_desktop(icons: &[Icon]) {
     draw_text_at("IluminOS", 8, h - 24 + 8, BLACK);
 }
 
-// заголовок окна приложения
+// app window title
 fn app_title(app: App) -> &'static str {
     match app {
         App::Terminal => "Terminal",
@@ -103,7 +100,7 @@ fn app_title(app: App) -> &'static str {
     }
 }
 
-// создать виджет приложения в области content окна
+// create app widget in the window content area
 fn spawn(app: App, c: Rect) -> Box<dyn Widget> {
     let (cx, cy, cw, ch) = (c.x as usize, c.y as usize, c.w as usize, c.h as usize);
     match app {
@@ -115,7 +112,7 @@ fn spawn(app: App, c: Rect) -> Box<dyn Widget> {
     }
 }
 
-// главный цикл GUI
+// main gui loop
 pub fn run() {
     mouse::init();
     let (sw, sh) = framebuffer::dimensions();
@@ -128,10 +125,10 @@ pub fn run() {
         Icon { x: 30, y: 390, label: "Paint",      app: App::Paint },
     ];
 
-    // окно по центру экрана
+    // window centered on screen
     let geom = WindowGeom::new((sw - 520) / 2, (sh - 340) / 2, 520, 340);
 
-    // активное окно None = стол Some = приложение открыто
+    // active window none means desktop some means app open
     let mut active: Option<Box<dyn Widget>> = None;
 
     draw_desktop(&icons);
@@ -148,10 +145,10 @@ pub fn run() {
         mouse::poll();
         let (mx, my, left, _right) = mouse::get();
 
-        // движение мыши
+        // mouse movement
         if mx != last_mx || my != last_my {
             if active.is_some() && left {
-                // drag (кисть Paint)
+                // drag for paint brush
                 framebuffer::restore_under_cursor();
                 if let Some(w) = active.as_mut() {
                     wm::route_drag(w.as_mut(), mx, my);
@@ -167,7 +164,7 @@ pub fn run() {
             last_my = my;
         }
 
-        // tick для часов
+        // tick for the clock
         if let Some(w) = active.as_mut() {
             if tick_frame % 40000 == 0 && wm::route_tick(w.as_mut()) {
                 framebuffer::restore_under_cursor();
@@ -178,12 +175,12 @@ pub fn run() {
         }
         tick_frame = tick_frame.wrapping_add(1);
 
-        // клик по фронту нажатия
+        // click on rising edge
         if left && !last_left {
             framebuffer::restore_under_cursor();
             let mut opened: Option<App> = None;
             let mut closing = false;
-            // сначала решаем что делать, не присваивая active внутри его же borrow
+            // decide what to do without mutating active inside its own borrow
             if let Some(w) = active.as_mut() {
                 if wm::close_hit(geom, mx, my) {
                     closing = true;
@@ -198,7 +195,7 @@ pub fn run() {
                     }
                 }
             }
-            // применяем решение вне borrow
+            // apply the decision outside the borrow
             if closing {
                 active = None;
                 draw_desktop(&icons);
@@ -215,7 +212,7 @@ pub fn run() {
         }
         last_left = left;
 
-        // клавиатура
+        // keyboard
         if let Some(key) = keyboard::try_read_key() {
             if key == 0x1b {
                 return;

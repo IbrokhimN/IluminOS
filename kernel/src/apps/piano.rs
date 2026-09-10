@@ -4,10 +4,10 @@ use crate::framebuffer;
 use crate::print_color;
 use crate::framebuffer::{GREEN, CYAN, YELLOW, GRAY, WHITE, RED};
 
-// перевести букву клавиши в частоту ноты (0 = не нота)
+// map key char to note frequency 0 means no note
 fn key_to_note(key: u8) -> u32 {
     match key {
-        // нижний ряд — белые клавиши
+        // bottom row white keys
         b'z' => NOTE_C4,
         b'x' => NOTE_D4,
         b'c' => NOTE_E4,
@@ -16,13 +16,13 @@ fn key_to_note(key: u8) -> u32 {
         b'n' => NOTE_A4,
         b'm' => NOTE_B4,
         b',' => NOTE_C5,
-        // верхний ряд — чёрные клавиши (диезы)
+        // top row black keys sharps
         b's' => NOTE_CS4,
         b'd' => NOTE_DS4,
         b'g' => NOTE_FS4,
         b'h' => NOTE_GS4,
         b'j' => NOTE_AS4,
-        // второй ряд октавой выше
+        // second row one octave up
         b'q' => NOTE_C5,
         b'w' => NOTE_D5,
         b'e' => NOTE_E5,
@@ -32,7 +32,7 @@ fn key_to_note(key: u8) -> u32 {
     }
 }
 
-// имя ноты для показа на экране
+// note name for display
 fn note_name(key: u8) -> &'static str {
     match key {
         b'z' => "C4", b'x' => "D4", b'c' => "E4", b'v' => "F4",
@@ -43,35 +43,35 @@ fn note_name(key: u8) -> &'static str {
     }
 }
 
-// запустить пианино. Esc для выхода
+// run piano esc to quit
 pub fn run() {
     framebuffer::clear();
     draw_help();
 
     loop {
-        // блокирующе ждём клавишу
+        // block waiting for key
         let key = keyboard::read_key();
 
-        if key == 0x1b { // Esc — выход
+        if key == 0x1b { // esc quits
             break;
         }
 
         let freq = key_to_note(key);
         if freq > 0 {
-            // показать сыгранную ноту
+            // show played note
             print_color!(GREEN, "  ~ {} ({} Hz)\n", note_name(key), freq);
-            // пискнуть: частота + короткая длительность
+            // beep the note
             sound::beep(freq, 2);
         }
     }
 
-    sound::stop(); // на всякий случай выключить динамик
+    sound::stop(); // make sure speaker is off
     framebuffer::clear();
     crate::banner::show();
     print_color!(GREEN, "piano closed.\n");
 }
 
-// нарисовать раскладку клавиш
+// draw key layout help
 fn draw_help() {
     print_color!(CYAN, "  === IluminOS Piano ===\n\n");
     print_color!(WHITE, "  White keys (bottom row):\n");

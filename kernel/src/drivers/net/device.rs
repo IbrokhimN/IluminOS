@@ -1,13 +1,12 @@
-// прослойка между драйвером RTL8139 и smoltcp через трейт Device
-// сигнатуры под smoltcp 0.11.x
+// bridges rtl8139 driver to smoltcp via device trait
 
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::time::Instant;
 use crate::tcp::rtl8139;
 
-const MTU: usize = 1500; // макс размер кадра Ethernet
+const MTU: usize = 1500; // max ethernet frame size
 
-// карта глазами smoltcp пустышка вся работа в драйвере
+// smoltcp view of the card actual work is in the driver
 pub struct NetDevice;
 
 impl NetDevice {
@@ -16,12 +15,12 @@ impl NetDevice {
     }
 }
 
-// реализация Device подключает карту к smoltcp
+// device impl plugs the card into smoltcp
 impl Device for NetDevice {
     type RxToken<'a> = NetRxToken;
     type TxToken<'a> = NetTxToken;
 
-    // есть ли принятый кадр
+    // check if a frame was received
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         let mut buf = [0u8; MTU];
         match rtl8139::receive(&mut buf) {
@@ -34,12 +33,12 @@ impl Device for NetDevice {
         }
     }
 
-    // smoltcp хочет отправить даём TX токен
+    // smoltcp wants to send give it a tx token
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
         Some(NetTxToken)
     }
 
-    // возможности карты
+    // card capabilities
     fn capabilities(&self) -> DeviceCapabilities {
         let mut caps = DeviceCapabilities::default();
         caps.max_transmission_unit = MTU;
@@ -48,7 +47,7 @@ impl Device for NetDevice {
     }
 }
 
-// держит принятые данные пока smoltcp их не потребит
+// holds received data until smoltcp consumes it
 pub struct NetRxToken {
     data: [u8; MTU],
     len: usize,
@@ -63,7 +62,7 @@ impl RxToken for NetRxToken {
     }
 }
 
-// smoltcp заполняет буфер а мы шлём через драйвер
+// smoltcp fills the buffer then we send via driver
 pub struct NetTxToken;
 
 impl TxToken for NetTxToken {

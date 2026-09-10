@@ -1,9 +1,7 @@
 use core::fmt;
 use spin::{Mutex, Once};
 
-// написал цвета справа потому что мой нвим показывает цвета написанных юникодов
-// и мне так удобнее
-// готовые цвета в формате 0x00RRGGBB
+// colors in 0x00rrggbb format
 pub const WHITE: u32    =    0xFFFFFF;  // #ffffff
 pub const GRAY: u32     =    0xAAAAAA;  // #aaaaaa
 pub const GREEN: u32    =    0x33FF66;  // #33ff66
@@ -15,7 +13,7 @@ pub const BLUE: u32     =    0x5599FF;  // #5599ff
 pub const MAGENTA: u32  =    0xCC77FF;  // #cc77ff
 
 
-// EverForest Colors
+// everforest color palette
 pub const EVERFOREST_BACKGROUND: u32   =   0x272E33;  // #272E33
 pub const EVERFOREST_FOREGROUND: u32   =   0xD3C6AA;  // #D4C6AA
 
@@ -29,15 +27,15 @@ pub const EVERFOREST_CYAN: u32         =   0x83C092;  // #83c092
 pub const EVERFOREST_WHITE: u32        =   0xD3C6AA;  // #d3c6aa
 
 
-// файл шрифта зашивается прямо в бинарь на этапе компиляции
+// font file embedded into the binary at compile time
 static FONT_BYTES: &[u8] = include_bytes!("./fonts/ruscii_8x8.psfu");
 
 struct PsfFont {
     width: usize,
     height: usize,
-    bytes_per_row: usize, // сколько байт занимает одна строка глифа
-    glyph_size: usize,    // размер одного глифа в байтах
-    glyphs_offset: usize, // с какого байта в файле начинаются сами глифы
+    bytes_per_row: usize, // bytes per glyph row
+    glyph_size: usize,    // bytes per glyph
+    glyphs_offset: usize, // byte offset where glyphs start
     num_glyphs: usize,
 }
 
@@ -56,7 +54,7 @@ impl PsfFont {
                 num_glyphs,
             };
         }
-        // PSF2: магия 0x72 0xb5 0x4a 0x86, дальше заголовок из u32 le полей
+        // psf2 magic 0x72 0xb5 0x4a 0x86 then a header of le u32 fields
         if data.len() >= 32 && data[0] == 0x72 && data[1] == 0xb5 && data[2] == 0x4a && data[3] == 0x86 {
             let rd = |o: usize| -> usize {
                 u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]) as usize
@@ -76,14 +74,13 @@ impl PsfFont {
                 num_glyphs: length,
             };
         }
-        // не смогли распознать файл - фолбек 8x16 пустышка чтобы не паниковать
+        // unrecognized file fall back to a blank 8x16 font
         PsfFont { width: 8, height: 16, bytes_per_row: 1, glyph_size: 16, glyphs_offset: 0, num_glyphs: 0 }
     }
 
     #[inline]
     fn glyph(&self, ch: u8) -> &'static [u8] {
-        // юникод-таблицу PSF (если она есть в файле) не разбираем, индексируем
-        // глиф напрямую кодом символа, как было с BASIC_LEGACY
+        // psf unicode table is ignored index glyphs directly by char code
         let idx = if (ch as usize) < self.num_glyphs { ch as usize } else { 0 };
         let start = self.glyphs_offset + idx * self.glyph_size;
         let end = start + self.glyph_size;
@@ -92,7 +89,7 @@ impl PsfFont {
 
     #[inline]
     fn bit_set(&self, glyph: &[u8], x: usize, y: usize) -> bool {
-        // в psf строка глифа хранится msb-первым
+        // psf glyph rows are stored msb first
         let byte = glyph[y * self.bytes_per_row + x / 8];
         let bit = 7 - (x % 8);
         (byte & (1 << bit)) != 0
@@ -123,12 +120,12 @@ static FB: Mutex<Option<Fb>> = Mutex::new(None);
 
 static THEME_FG: Mutex<u32> = Mutex::new(EVERFOREST_FOREGROUND);
 
-// вернуть текущий дефолтный цвет текста темы
+// current theme text color
 pub fn theme_fg() -> u32 {
     *THEME_FG.lock()
 }
 
-// поставить тему: dark = белый текст на чёрном lgiht = чёрный текст на белом
+// set theme colors
 pub fn set_theme(fg: u32, bg: u32) {
     *THEME_FG.lock() = fg;
     let mut guard = FB.lock();
@@ -141,7 +138,7 @@ pub fn set_theme(fg: u32, bg: u32) {
 unsafe impl Send for Fb {}
 
 pub fn init(addr: *mut u8, width: usize, height: usize, pitch: usize) {
-    // прогреваем парсинг шрифта заранее чтобы первый print! не тормозил
+    // warm up font parsing so first print isnt slow
     font();
     let mut guard = FB.lock();
     *guard = Some(Fb {
@@ -166,9 +163,7 @@ pub fn set_color(color: u32) {
     }
 }
 
-// поставить позицию текстового курсора для редактора
-
-// нарисовать курсор подчёркивание под клеткой для редактора статичный
+// draw underline cursor for the editor
 pub fn draw_edit_cursor(col: usize, row: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -176,7 +171,7 @@ pub fn draw_edit_cursor(col: usize, row: usize) {
         let px = col * f.width;
         let py = row * f.height;
         let fg = fb.fg;
-        // нижние 2 строки пикселей клетки
+        // bottom 2 pixel rows of the cell
         for y in (f.height - 2)..f.height {
             for x in 0..f.width {
                 fb.put_pixel(px + x, py + y, fg);
@@ -189,7 +184,7 @@ pub fn draw_edit_cursor(col: usize, row: usize) {
 pub fn set_cursor_pos(col: usize, row: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        // если курсор был нарисован в старом месте стереть
+        // erase cursor from old position if drawn
         if fb.cursor_on {
             let (ocx, ocy) = (fb.col, fb.row);
             let bg = fb.bg;
@@ -260,10 +255,10 @@ impl Fb {
         unsafe {
             let src = self.addr.add(line_bytes);
             let dst = self.addr;
-            // Перемещаем старые пиксели вверх
+            // move old pixels up
             core::ptr::copy(src, dst, total - line_bytes);
 
-            // Заполняем новую нижнюю строку фоновым цветом self.bg
+            // fill new bottom row with background color
             let start_y = self.height - font().height;
             let bg = self.bg;
 
@@ -289,11 +284,8 @@ impl Fb {
                 let (cx, cy) = (self.col, self.row);
                 self.draw_glyph(b' ', cx, cy);
             }
-            // 0x01-0x07 и 0x0b-0x0f — «прикольные» декоративные глифы из ruscii_8x8
-            // (смайлики, карточные масти, ноты, солнце, см. FUN_SYMBOLS в keyboard.rs).
-            // 0x08 (backspace), 0x09 (tab) и 0x0a (\n) сюда не входят — они
-            // остаются управляющими символами консоли.
-            // 0x80-0xff — кириллица (см. русскую раскладку в keyboard.rs)
+            // 0x01 to 0x0f minus control codes are decorative glyphs see keyboard.rs
+            // 0x80 to 0xff is cyrillic see keyboard.rs layout
             0x01..=0x07 | 0x0b..=0x0f | 0x20..=0x7e | 0x80..=0xff => {
                 if self.col >= self.cols() {
                     self.newline();
@@ -317,7 +309,7 @@ pub fn clear() {
                 core::ptr::write_bytes(fb.addr, 0, total);
             }
         } else {
-            // не чёрный фон — заливаем попиксельно
+            // non black background fill pixel by pixel
             for y in 0..fb.height {
                 for x in 0..fb.width {
                     fb.put_pixel(x, y, bg);
@@ -358,7 +350,7 @@ pub fn hide_cursor() {
 }
 
 
-// размеры экрана в пикселях для GUI
+// screen size in pixels for the gui
 pub fn dimensions() -> (usize, usize) {
     let guard = FB.lock();
     if let Some(fb) = guard.as_ref() {
@@ -368,7 +360,7 @@ pub fn dimensions() -> (usize, usize) {
     }
 }
 
-// поставить один пиксель напрямую для GUI
+// set one pixel directly for the gui
 pub fn pixel(x: usize, y: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -376,7 +368,7 @@ pub fn pixel(x: usize, y: usize, color: u32) {
     }
 }
 
-// залитый прямоугольник
+// filled rectangle
 pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -388,7 +380,7 @@ pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     }
 }
 
-// рамка прямоугольника толщиной 1 пиксель
+// 1 pixel rectangle outline
 pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -403,7 +395,7 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
     }
 }
 
-// нарисовать один символ в пиксельной позиции заданным цветом
+// draw one glyph at a pixel position
 pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -419,14 +411,7 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     }
 }
 
-// нарисовать строку в пиксельной позиции
-//
-// важно: берём .chars(), а не .bytes() — наши байты-индексы глифов (в том
-// числе кириллица из ruscii_8x8, коды 0x80-0xff) хранятся в String через
-// `(байт as char).push(...)`, то есть каждый такой байт лежит в строке как
-// полноценный unicode-символ (и физически на диске/в памяти закодирован
-// 2 utf-8 байтами). char::as_u8 корректно достаёт обратно исходный байт,
-// а вот .bytes() отдал бы сырые utf-8 байты и всё сломал бы
+// draw text at a pixel position uses chars not bytes to keep glyph codes intact
 pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     let mut x = px;
     let w = font().width;
@@ -437,9 +422,9 @@ pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
 }
 
 
-// нарисовать курсор-стрелку мыши в позиции. простая стрелка 12x12
+// draw mouse cursor arrow at position 12x12
 pub fn draw_cursor_arrow(px: usize, py: usize) {
-    // битовая маска стрелки 1 чёрный контур 2 белая заливка 0 прозрачно
+    // arrow bitmask 1 black outline 2 white fill 0 transparent
     let arrow: [&[u8]; 12] = [
         b"1           ",
         b"11          ",
@@ -459,8 +444,8 @@ pub fn draw_cursor_arrow(px: usize, py: usize) {
         for (row, line) in arrow.iter().enumerate() {
             for (col, &ch) in line.iter().enumerate() {
                 let color = match ch {
-                    b'1' => Some(0x000000u32), // чёрный контур
-                    b'2' => Some(0xFFFFFFu32), // белая заливка
+                    b'1' => Some(0x000000u32), // black outline
+                    b'2' => Some(0xFFFFFFu32), // white fill
                     _ => None,
                 };
                 if let Some(c) = color {
@@ -472,13 +457,13 @@ pub fn draw_cursor_arrow(px: usize, py: usize) {
 }
 
 
-// буфер под курсором 12x12 пикселей для сохранения фона
+// 12x12 pixel buffer to save background under cursor
 static mut CURSOR_BG: [u32; 144] = [0; 144];
 static mut CURSOR_SAVED: bool = false;
 static mut CURSOR_X: usize = 0;
 static mut CURSOR_Y: usize = 0;
 
-// сохранить фон под будущим курсором в позиции
+// save background under future cursor position
 pub fn save_under_cursor(px: usize, py: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -501,7 +486,7 @@ pub fn save_under_cursor(px: usize, py: usize) {
     }
 }
 
-// восстановить фон где был курсор
+// restore background where cursor was
 pub fn restore_under_cursor() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -524,7 +509,7 @@ pub fn restore_under_cursor() {
 }
 
 
-// нарисовать символ с масштабом каждый пиксель глифа рисуется квадратом scale x scale
+// draw glyph scaled each pixel becomes a scale by scale square
 pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -533,7 +518,7 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
         for row in 0..f.height {
             for col in 0..f.width {
                 if f.bit_set(glyph, col, row) {
-                    // рисуем квадрат scale x scale вместо одного пикселя
+                    // draw a scale by scale square instead of one pixel
                     for sy in 0..scale {
                         for sx in 0..scale {
                             fb.put_pixel(px + col * scale + sx, py + row * scale + sy, fg);
@@ -545,7 +530,7 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     }
 }
 
-// нарисовать строку с масштабом вернуть ширину в пикселях
+// draw scaled text return width in pixels
 pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize) -> usize {
     let mut x = px;
     let w = font().width;
@@ -563,7 +548,7 @@ impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut guard = FB.lock();
         if let Some(fb) = guard.as_mut() {
-            // .chars() а не .bytes(), см. комментарий у draw_text_at
+            // chars not bytes see draw_text_at
             for c in s.chars() {
                 fb.write_char(c as u8);
             }

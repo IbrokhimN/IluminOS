@@ -1,4 +1,4 @@
-// ps 2 клавиатура опросом без irq читаем 0x60 когда в 0x64 есть данные
+// ps2 keyboard polling no irq read 0x60 when 0x64 has data
 use spin::Mutex;
 use crate::port::inb;
 
@@ -37,7 +37,7 @@ static STATE: Mutex<KbState> = Mutex::new(KbState {
     layout: Layout::En,
 });
 
-// на случай если гуе захочет нарисовать индикатор раскладки где-нибудь в углу
+// in case gui wants to draw a layout indicator somewhere
 pub fn layout_name() -> &'static str {
     match STATE.lock().layout {
         Layout::En => "EN",
@@ -45,30 +45,22 @@ pub fn layout_name() -> &'static str {
     }
 }
 
+// ctrl alt plus digit produces decorative symbols
 static FUN_SYMBOLS: [u8; 10] = [
-    0x01, // 1 -> ☺
-    0x02, // 2 -> ☻
-    0x03, // 3 -> ♥
-    0x04, // 4 -> ♦
-    0x05, // 5 -> ♣
-    0x06, // 6 -> ♠
-    0x07, // 7 -> •
-    0x0d, // 8 -> ♪
-    0x0e, // 9 -> ♫
-    0x0f, // 0 -> ☼
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0d, 0x0e, 0x0f,
 ];
 
 pub fn has_key() -> bool {
     let status = inb(0x64);
-    // есть данные бит 0 и это НЕ мышь бит 0x20 равен 0
+    // data present bit 0 and its not the mouse bit 0x20 clear
     status & 1 != 0 && status & 0x20 == 0
 }
 
-// обработать один готовый скан код вернуть Some ascii если это символ
+// process one scancode return ascii if it maps to a char
 fn process_one() -> Option<u8> {
     let code = inb(0x60);
 
-    // префикс расширенных клавиш (стрелки, правые ctrl/alt, win) — запоминаем и ждём следующий байт
+    // extended key prefix arrows right ctrl alt win remember and wait for next byte
     if code == 0xe0 {
         STATE.lock().extended = true;
         return None;
@@ -81,9 +73,9 @@ fn process_one() -> Option<u8> {
             let released = code & 0x80 != 0;
             let make = code & 0x7f;
             match make {
-                0x1d => { s.ctrl = !released; return None; } // правый ctrl
-                0x38 => { s.alt = !released; return None; }  // правый alt (altgr)
-                0x5b | 0x5c => { s.win = !released; return None; } // левый/правый win
+                0x1d => { s.ctrl = !released; return None; } // right ctrl
+                0x38 => { s.alt = !released; return None; }  // right alt altgr
+                0x5b | 0x5c => { s.win = !released; return None; } // left or right win
                 _ => {}
             }
             drop(s);
@@ -105,8 +97,8 @@ fn process_one() -> Option<u8> {
         let mut s = STATE.lock();
         match make {
             0x2a | 0x36 => s.shift = false,
-            0x1d => s.ctrl = false, // левый ctrl отпущен
-            0x38 => s.alt = false,  // левый alt отпущен
+            0x1d => s.ctrl = false, // left ctrl released
+            0x38 => s.alt = false,  // left alt released
             _ => {}
         }
         return None;
@@ -119,11 +111,11 @@ fn process_one() -> Option<u8> {
             None
         }
         0x1d => {
-            STATE.lock().ctrl = true; // левый ctrl нажат
+            STATE.lock().ctrl = true; // left ctrl pressed
             None
         }
         0x38 => {
-            STATE.lock().alt = true; // левый alt нажат
+            STATE.lock().alt = true; // left alt pressed
             None
         }
         0x3a => {
@@ -167,7 +159,7 @@ fn process_one() -> Option<u8> {
     }
 }
 
-// неблокирующее чтение вернуть символ если он уже есть иначе None
+// non blocking read return char if already available
 pub fn try_read_key() -> Option<u8> {
     if !has_key() {
         return None;
@@ -175,7 +167,7 @@ pub fn try_read_key() -> Option<u8> {
     process_one()
 }
 
-// блокирующее чтение одного символа
+// blocking read of one char
 pub fn read_key() -> u8 {
     loop {
         if !has_key() {
@@ -188,7 +180,7 @@ pub fn read_key() -> u8 {
     }
 }
 
-// scan code set 1 ascii/cp866 (в зависимости от раскладки)
+// scan code set 1 to ascii or cp866 depending on layout
 fn scancode_to_ascii(code: u8, shift: bool, upper: bool, layout: Layout) -> Option<u8> {
     if layout == Layout::Ru {
         if let Some(ch) = ru_scancode(code, shift, upper) {
@@ -294,7 +286,7 @@ fn ru_scancode(code: u8, shift: bool, upper: bool) -> Option<u8> {
         0x29 => Some(cyr(0xf1, 0xf0)), // ` -> ё/Ё
         0x33 => Some(cyr(0xa1, 0x81)), // , -> б/Б
         0x34 => Some(cyr(0xee, 0x9e)), // . -> ю/Ю
-        0x35 => Some(if shift { b',' } else { b'.' }), // / -> . или ,
+        0x35 => Some(if shift { b',' } else { b'.' }), // slash key dot or comma
         _ => None,
     }
 }

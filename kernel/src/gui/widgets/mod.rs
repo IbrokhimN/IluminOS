@@ -1,2 +1,2 @@
-// gui-приложения (виджеты)
+// gui widgets
 pub mod apps;

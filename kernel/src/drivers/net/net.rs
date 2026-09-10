@@ -9,42 +9,40 @@ use crate::tcp::rtl8139;
 use crate::print_color;
 use crate::framebuffer::{GREEN, RED, YELLOW, GRAY};
 
-const OUR_IP: Ipv4Address = Ipv4Address::new(10, 0, 2, 15); // наш адрес
-const GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);  // шлюз (сам QEMU)
-const PREFIX: u8 = 24;                                        // маска /24
+const OUR_IP: Ipv4Address = Ipv4Address::new(10, 0, 2, 15); // our address
+const GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);  // gateway is qemu itself
+const PREFIX: u8 = 24;                                        // /24 mask
 
-// smoltcp нужен "текущий момент" в миллисекундах. Берём из uptime
-// (для ping точность некритична; для TCP-таймаутов желательно поточнее)
+// smoltcp needs the current time in ms taken from uptime
 fn now() -> Instant {
     Instant::from_millis((crate::time::uptime_secs() as i64) * 1000
         + (crate::time::ticks_since_boot() / 2_500_000) as i64 % 1000)
 }
 
-// собрать сетевой интерфейс smoltcp поверх нашей карты
+// build smoltcp interface on top of our card
 fn build_iface(device: &mut NetDevice, mac: [u8; 6]) -> Interface {
-    // конфиг: наш аппаратный адрес (MAC карты)
+    // config with our card mac address
     let config = Config::new(EthernetAddress(mac).into());
     let mut iface = Interface::new(config, device, now());
 
-    // прописать наш IP-адрес интерфейсу
+    // set our ip address on the interface
     iface.update_ip_addrs(|addrs| {
         addrs.push(IpCidr::new(IpAddress::Ipv4(OUR_IP), PREFIX)).ok();
     });
-    // маршрут по умолчанию: всё "наружу" через шлюз (QEMU выпустит в интернет)
+    // default route everything outbound via gateway
     iface.routes_mut().add_default_ipv4_route(GATEWAY).ok();
     iface
 }
 
-// послать ICMP echo на target и подождать ответ
-// напр ping 10.0.2.2 шлюз или ping 8.8.8.8 интернет
+// send icmp echo to target and wait for reply
 pub fn cmd_ping(target: &str) {
-    // 1. разобрать IP из строки
+    // parse ip from string
     let ip = match parse_ipv4(target) {
         Some(o) => Ipv4Address::new(o[0], o[1], o[2], o[3]),
         None => { print_color!(RED, "bad ip: {}\n", target); return; }
     };
 
-    // 2. поднять карту (если ещё не поднята) и взять её MAC
+    // bring up card if needed and get its mac
     if !rtl8139::init() {
         print_color!(RED, "no network card\n");
         return;
@@ -54,11 +52,11 @@ pub fn cmd_ping(target: &str) {
         None => { print_color!(RED, "no MAC\n"); return; }
     };
 
-    // 3. собрать устройство + интерфейс smoltcp
+    // build device and smoltcp interface
     let mut device = NetDevice::new();
     let mut iface = build_iface(&mut device, mac);
 
-    // ICMP сокет буферы приёма и передачи
+    // icmp socket rx and tx buffers
     let rx_buf = icmp::PacketBuffer::new(
         vec![icmp::PacketMetadata::EMPTY; 8],
         vec![0; 256],
@@ -69,16 +67,16 @@ pub fn cmd_ping(target: &str) {
     );
     let icmp_socket = icmp::Socket::new(rx_buf, tx_buf);
 
-    // 5. положить сокет в набор сокетов (smoltcp работает через SocketSet)
+    // add socket to the socket set
     let mut sockets = SocketSet::new(vec![]);
     let handle = sockets.add(icmp_socket);
 
-    // "номер" нашего ping'а, чтобы отличить свой ответ от чужих
+    // our ping identifier to tell our replies from others
     let ident = 0x22b;
-    // привязать сокет к этому идентификатору
+    // bind socket to this identifier
     {
         let socket = sockets.get_mut::<icmp::Socket>(handle);
-        // bind по ident: ловим ответы именно на наши echo
+        // bind by ident to catch only our echoes
         if socket.bind(icmp::Endpoint::Ident(ident)).is_err() {
             print_color!(RED, "icmp bind failed\n");
             return;
@@ -87,27 +85,27 @@ pub fn cmd_ping(target: &str) {
 
     print_color!(YELLOW, "PING {}.{}.{}.{}\n", ip.0[0], ip.0[1], ip.0[2], ip.0[3]);
 
-    let seq: u16 = 0;         // номер echo-пакета (растёт с каждым)
-    let mut sent = false;         // отправили ли текущий запрос
-    let mut waited: u32 = 0;      // счётчик ожидания ответа
+    let seq: u16 = 0;         // echo sequence number
+    let mut sent = false;         // whether request was sent
+    let mut waited: u32 = 0;      // reply wait counter
     let mut got_reply = false;
 
-    // главный цикл крутим poll шлём echo ждём reply с лимитом итераций
+    // main loop poll send echo wait for reply up to a limit
     for _ in 0..2_000_000u32 {
-        // прокрутить стек: приём/обработка/передача
+        // pump the stack receive process transmit
         iface.poll(now(), &mut device, &mut sockets);
 
         let socket = sockets.get_mut::<icmp::Socket>(handle);
 
-        // 6a. если сокет готов слать и мы ещё не послали — шлём echo request
+        // send echo request once socket is ready
         if !sent && socket.can_send() {
-            // сформировать ICMP echo request вручную (заголовок + пусто-данные)
+            // build icmp echo request manually
             let icmp_repr = smoltcp::wire::Icmpv4Repr::EchoRequest {
                 ident,
                 seq_no: seq,
-                data: b"iluminos",   // произвольные данные "на эхо"
+                data: b"iluminos",   // arbitrary echo payload
             };
-            // выделить место в сокете и записать туда пакет
+            // allocate space in the socket and write the packet
             if let Ok(payload) = socket.send(icmp_repr.buffer_len(), ip.into()) {
                 let mut packet = smoltcp::wire::Icmpv4Packet::new_unchecked(payload);
                 icmp_repr.emit(&mut packet, &ChecksumCapabilities::default());
@@ -115,15 +113,15 @@ pub fn cmd_ping(target: &str) {
             }
         }
 
-        // 6b. если пришёл ответ — прочитать и проверить
+        // check for and read a reply
         if socket.can_recv() {
             if let Ok((payload, _addr)) = socket.recv() {
-                // распарсить как ICMP-пакет
+                // parse as an icmp packet
                 if let Ok(packet) = smoltcp::wire::Icmpv4Packet::new_checked(payload) {
                     if let Ok(repr) = smoltcp::wire::Icmpv4Repr::parse(
                         &packet, &ChecksumCapabilities::default()
                     ) {
-                        // это echo reply на наш ident? значит хост живой
+                        // echo reply on our ident means host is alive
                         if let smoltcp::wire::Icmpv4Repr::EchoReply { .. } = repr {
                             print_color!(GREEN, "reply from {}.{}.{}.{}  seq={}\n",
                                 ip.0[0], ip.0[1], ip.0[2], ip.0[3], seq);
@@ -135,25 +133,24 @@ pub fn cmd_ping(target: &str) {
             }
         }
 
-        // 6c. отсчёт таймаута ожидания
+        // reply timeout countdown
         if sent {
             waited += 1;
             if waited > 1_500_000 {
-                break; // ждали слишком долго — считаем "нет ответа"
+                break; // waited too long treat as no reply
             }
         }
         core::hint::spin_loop();
     }
 
-    let _ = seq; // (seq пока фиксирован 0; для нескольких пингов увеличивай)
+    let _ = seq; // seq fixed at 0 for now
     if !got_reply {
         print_color!(GRAY, "no reply (timeout)\n");
-        // подсказка: если пингуешь 10.0.2.2 (шлюз) и нет ответа — проблема в
-        // приёме/драйвере. Если шлюз отвечает, а 8.8.8.8 нет — вопрос к NAT/DNS
+        // no reply from gateway means driver issue no reply beyond means nat or dns
     }
 }
 
-// "10.0.2.2" -> [10,0,2,2]. Простой ручной парсер
+// simple manual ipv4 string parser
 fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
     let mut octets = [0u8; 4];
     let mut idx = 0;

@@ -2,14 +2,14 @@ use crate::framebuffer::{self, GRAY};
 use crate::println;
 
 pub fn show() {
-    // градиент от голубого к фиолетовому по строкам
+    // gradient from cyan to purple
     let colors: [u32; 6] = [
-        0x33DDFF, // голубой
+        0x33DDFF, // cyan
         0x44BBFF,
         0x5599FF,
         0x6677FF,
         0x7755FF,
-        0x8844FF, // фиолетовый
+        0x8844FF, // purple
     ];
 
     let lines: [&str; 6] = [

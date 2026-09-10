@@ -6,32 +6,32 @@ use alloc::string::String;
 const USER: &str = "root";
 const PASS: &str = "iluminos";
 
-const BG_TOP: u32 = 0x0A0A18;      // фон сверху (тёмно-синий)
-const BG_BOT: u32 = 0x1A1030;      // фон снизу (фиолетовый)
-const CARD_BG: u32 = 0x15152A;     // фон карточки
-const CARD_BORDER: u32 = 0x4444AA; // рамка карточки
-const FIELD_BG: u32 = 0x0E0E1E;    // фон поля ввода
-const FIELD_ACTIVE: u32 = 0x5566FF;// рамка активного поля
-const FIELD_IDLE: u32 = 0x333355;  // рамка неактивного поля
-const ACCENT: u32 = 0x66DDFF;      // акцент (голубой)
-const TITLE_C: u32 = 0x88AAFF;     // заголовок
-const LABEL_C: u32 = 0x8888AA;     // подписи полей
-const TEXT_C: u32 = 0xDDDDEE;      // вводимый текст
-const HINT_C: u32 = 0x555577;      // подсказки внизу
-const ERR_C: u32 = 0xFF5566;       // ошибка
+const BG_TOP: u32 = 0x0A0A18;      // top background
+const BG_BOT: u32 = 0x1A1030;      // bottom background
+const CARD_BG: u32 = 0x15152A;     // card background
+const CARD_BORDER: u32 = 0x4444AA; // card border
+const FIELD_BG: u32 = 0x0E0E1E;    // input field background
+const FIELD_ACTIVE: u32 = 0x5566FF;// active field border
+const FIELD_IDLE: u32 = 0x333355;  // idle field border
+const ACCENT: u32 = 0x66DDFF;      // accent color
+const TITLE_C: u32 = 0x88AAFF;     // title color
+const LABEL_C: u32 = 0x8888AA;     // field label color
+const TEXT_C: u32 = 0xDDDDEE;      // typed text color
+const HINT_C: u32 = 0x555577;      // bottom hint color
+const ERR_C: u32 = 0xFF5566;       // error color
 
-// какое поле сейчас активно
+// which field is active
 #[derive(PartialEq, Clone, Copy)]
 enum Field { User, Pass }
 
-// показать логин, вернуться только когда пароль верный
+// show login return only on correct password
 pub fn run() {
     let mut username = String::new();
     let mut password = String::new();
     let mut field = Field::User;
     let mut error = false;
 
-    // СТАТИКУ (фон, карточку, заголовок) рисуем ОДИН раз — не мерцает
+    // draw static background card and title once to avoid flicker
     draw_static();
     draw_dynamic(&username, &password, field, error);
 
@@ -47,8 +47,7 @@ pub fn run() {
                         success_animation();
                         return;
                     } else {
-                        // ошибка: тряхнуть карточку (тут полная перерисовка,
-                        // но это короткая анимация — мерцание незаметно)
+                        // wrong password shake the card
                         error = true;
                         password.clear();
                         sound::beep(120, 1);
@@ -57,7 +56,7 @@ pub fn run() {
                             draw_shake(&username, &password, field, error, shake);
                             sound::delay(1);
                         }
-                        // вернуть статику на место после тряски
+                        // redraw static after the shake
                         draw_static();
                     }
                 }
@@ -83,12 +82,12 @@ pub fn run() {
             _ => {}
         }
 
-        // на каждую клавишу перерисовываем ТОЛЬКО поля + ошибку (не весь экран)
+        // redraw only fields and error on each key not the whole screen
         draw_dynamic(&username, &password, field, error);
     }
 }
 
-// координаты карточки (нужны и static, и dynamic — считаем одинаково)
+// card geometry shared by static and dynamic draws
 fn card_geom() -> (usize, usize, usize, usize) {
     let (w, h) = dimensions();
     let card_w = 420usize;
@@ -96,19 +95,19 @@ fn card_geom() -> (usize, usize, usize, usize) {
     ((w - card_w) / 2, (h - card_h) / 2, card_w, card_h)
 }
 
-// фон, карточка, заголовок, подписи. Рисуется ОДИН раз
+// background card title and labels drawn once
 fn draw_static() {
     let (w, h) = dimensions();
     draw_gradient(w, h);
 
     let (card_x, card_y, card_w, card_h) = card_geom();
 
-    // тень + тело + рамка карточки
+    // shadow body and border of the card
     fill_rect(card_x + 6, card_y + 6, card_w, card_h, 0x05050A);
     fill_rect(card_x, card_y, card_w, card_h, CARD_BG);
     draw_border(card_x, card_y, card_w, card_h, 2, CARD_BORDER);
 
-    // заголовок + подзаголовок
+    // title and subtitle
     let title = "IluminOS";
     let title_w = title.len() * 8 * 2;
     draw_text_scaled(title, card_x + (card_w - title_w) / 2, card_y + 24, TITLE_C, 2);
@@ -121,24 +120,24 @@ fn draw_static() {
     draw_text_at("USERNAME", fx, card_y + 90, LABEL_C);
     draw_text_at("PASSWORD", fx, card_y + 140, LABEL_C);
 
-    // подсказки внизу
+    // bottom hints
     let hint = "Tab: switch field    Enter: confirm";
     draw_text_at(hint, (w - hint.len() * 8) / 2, h - 40, HINT_C);
     let demo = "demo: root / iluminos";
     draw_text_at(demo, (w - demo.len() * 8) / 2, h - 24, 0x666688);
 }
 
-// перерисовать ТОЛЬКО меняющееся: поля ввода + сообщение об ошибке
+// redraw only the changing parts fields and error message
 fn draw_dynamic(username: &str, password: &str, field: Field, error: bool) {
     let (card_x, card_y, card_w, _card_h) = card_geom();
     let fx = card_x + 40;
     let fw = card_w - 80;
 
-    // поля (сами затирают свой фон, так что старый текст исчезает)
+    // fields clear their own background so old text disappears
     draw_field(fx, card_y + 104, fw, username, false, field == Field::User);
     draw_field(fx, card_y + 154, fw, password, true, field == Field::Pass);
 
-    // область под ошибкой: сначала затереть фоном карточки, потом (если есть) текст
+    // clear error area then draw message if any
     fill_rect(card_x + 20, card_y + 190, card_w - 40, 12, CARD_BG);
     if error {
         let msg = "invalid credentials";
@@ -146,7 +145,7 @@ fn draw_dynamic(username: &str, password: &str, field: Field, error: bool) {
     }
 }
 
-// полная перерисовка со смещением карточки (только для анимации тряски)
+// full redraw with card offset for shake animation
 fn draw_shake(username: &str, password: &str, field: Field, error: bool, shake: i32) {
     let (w, h) = dimensions();
     draw_gradient(w, h);
@@ -172,54 +171,54 @@ fn draw_shake(username: &str, password: &str, field: Field, error: bool, shake: 
     }
 }
 
-// нарисовать поле ввода: рамка + текст (или точки для пароля) + курсор
+// draw input field border text or dots for password and cursor
 fn draw_field(x: usize, y: usize, w: usize, value: &str, secret: bool, active: bool) {
     let fh = 24usize;
-    // фон поля
+    // field background
     fill_rect(x, y, w, fh, FIELD_BG);
-    // рамка: ярче если поле активно
+    // brighter border when active
     let border = if active { FIELD_ACTIVE } else { FIELD_IDLE };
     draw_border(x, y, w, fh, if active { 2 } else { 1 }, border);
 
-    // содержимое: пароль показываем точками
+    // content password shown as dots
     let tx = x + 10;
     let ty = y + 8;
     if secret {
-        // рисуем по точке на каждый символ пароля
+        // draw a dot per password character
         let mut px = tx;
         for _ in 0..value.len() {
-            fill_rect(px, ty + 2, 5, 5, TEXT_C); // квадратик-«точка»
+            fill_rect(px, ty + 2, 5, 5, TEXT_C); // dot square
             px += 12;
         }
-        // курсор после точек (если активно)
+        // cursor after the dots if active
         if active {
             fill_rect(px, ty - 1, 2, 10, ACCENT);
         }
     } else {
         draw_text_at(value, tx, ty, TEXT_C);
-        // курсор после текста
+        // cursor after the text
         if active {
             fill_rect(tx + value.len() * 8, ty - 1, 2, 10, ACCENT);
         }
     }
 }
 
-// рамка прямоугольника толщиной t
+// rectangle border of thickness t
 fn draw_border(x: usize, y: usize, w: usize, h: usize, t: usize, color: u32) {
-    fill_rect(x, y, w, t, color);              // верх
-    fill_rect(x, y + h - t, w, t, color);      // низ
-    fill_rect(x, y, t, h, color);              // лево
-    fill_rect(x + w - t, y, t, h, color);      // право
+    fill_rect(x, y, w, t, color);              // top
+    fill_rect(x, y + h - t, w, t, color);      // bottom
+    fill_rect(x, y, t, h, color);              // left
+    fill_rect(x + w - t, y, t, h, color);      // right
 }
 
-// вертикальный градиент фона от BG_TOP к BG_BOT
+// vertical background gradient from top to bottom color
 fn draw_gradient(w: usize, h: usize) {
     let bands = h / 4;
-    // разбираем цвета на каналы для интерполяции
+    // split colors into channels for interpolation
     let (r1, g1, b1) = ((BG_TOP >> 16) & 0xFF, (BG_TOP >> 8) & 0xFF, BG_TOP & 0xFF);
     let (r2, g2, b2) = ((BG_BOT >> 16) & 0xFF, (BG_BOT >> 8) & 0xFF, BG_BOT & 0xFF);
     for band in 0..bands {
-        let t = ((band * 255) / bands.max(1)) as u32; // 0..255 по высоте (u32 для арифметики с цветами)
+        let t = ((band * 255) / bands.max(1)) as u32; // 0 to 255 across height
         let r = r1 + (r2 - r1) * t / 255;
         let g = g1 + (g2 - g1) * t / 255;
         let b = b1 + (b2 - b1) * t / 255;
@@ -228,8 +227,8 @@ fn draw_gradient(w: usize, h: usize) {
     }
 }
 
-// приятный аккорд-«динь» при успешном входе
+// success chime on correct login
 fn success_animation() {
-    // восходящие ноты — «успех»
+    // rising notes for success
     framebuffer::clear();
 }

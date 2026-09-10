@@ -1,6 +1,4 @@
-// драйвер PS/2 мыши. мышь висит на втором канале PS/2 контроллера
-// портах 0x60 данные и 0x64 команды. после включения шлёт пакеты
-// по 3 байта флаги смещение X смещение Y.
+// ps2 mouse driver mouse sits on second ps2 channel sends 3 byte packets
 use crate::port::{inb, outb};
 use spin::Mutex;
 
@@ -8,7 +6,7 @@ const DATA: u16 = 0x60;
 const STATUS: u16 = 0x64;
 const CMD: u16 = 0x64;
 
-// состояние мыши позиция и кнопки
+// mouse state position and buttons
 pub struct MouseState {
     pub x: i32,
     pub y: i32,
@@ -23,7 +21,7 @@ static STATE: Mutex<MouseState> = Mutex::new(MouseState {
     right: false,
 });
 
-// ждём пока можно писать в контроллер бит 1 статуса должен быть 0
+// wait until controller is ready for write
 fn wait_write() {
     let mut t = 0;
     while inb(STATUS) & 2 != 0 {
@@ -34,7 +32,7 @@ fn wait_write() {
     }
 }
 
-// ждём пока можно читать бит 0 статуса должен быть 1
+// wait until data is ready to read
 fn wait_read() {
     let mut t = 0;
     while inb(STATUS) & 1 == 0 {
@@ -45,7 +43,7 @@ fn wait_read() {
     }
 }
 
-// послать команду именно мыши префикс 0xD4
+// send command targeted at the mouse
 fn write_mouse(val: u8) {
     wait_write();
     outb(CMD, 0xD4);
@@ -53,53 +51,52 @@ fn write_mouse(val: u8) {
     outb(DATA, val);
 }
 
-// прочитать ответ обычно 0xFA подтверждение
+// read ack byte usually 0xfa
 fn read_ack() -> u8 {
     wait_read();
     inb(DATA)
 }
 
-// инициализация мыши
+// mouse init
 pub fn init() {
-    // включить второй канал PS/2 команда 0xA8
+    // enable second ps2 channel
     wait_write();
     outb(CMD, 0xA8);
 
-    // включить генерацию событий в конфиге контроллера
+    // enable irq generation in controller config
     wait_write();
-    outb(CMD, 0x20); // читать байт конфига
+    outb(CMD, 0x20); // read config byte
     wait_read();
     let mut config = inb(DATA);
-    config |= 2; // бит 1 разрешить прерывание второго канала
-    config &= !0x20; // сбросить бит отключения второго канала
+    config |= 2; // enable second channel interrupt
+    config &= !0x20; // clear second channel disable bit
     wait_write();
-    outb(CMD, 0x60); // писать байт конфига
+    outb(CMD, 0x60); // write config byte
     wait_write();
     outb(DATA, config);
 
-    // сказать мыши использовать настройки по умолчанию
+    // tell mouse to use default settings
     write_mouse(0xF6);
     read_ack();
 
-    // включить передачу пакетов
+    // enable packet streaming
     write_mouse(0xF4);
     read_ack();
 }
 
-// накопитель байтов пакета
+// packet byte accumulator
 static PACKET: Mutex<[u8; 3]> = Mutex::new([0; 3]);
 static PACKET_IDX: Mutex<usize> = Mutex::new(0);
 
-// опросить мышь без ожидания. если пришёл полный пакет обновить состояние.
-// вызывать часто в цикле GUI.
+// poll mouse without blocking update state on full packet call often in gui loop
 pub fn poll() {
-    // есть ли данные и это данные мыши бит 5 статуса
+    // check for data and that its mouse data
     let status = inb(STATUS);
     if status & 1 == 0 {
-        return; // нет данных
+        return; // no data
     }
     if status & 0x20 == 0 {
-        // это данные клавиатуры не мыши пропускаем
+        // keyboard data not mouse skip it
         return;
     }
 
@@ -107,9 +104,9 @@ pub fn poll() {
     let mut idx = PACKET_IDX.lock();
     let mut pkt = PACKET.lock();
 
-    // первый байт пакета должен иметь бит 3 установленным иначе рассинхрон
+    // first packet byte must have bit 3 set or we are out of sync
     if *idx == 0 && byte & 0x08 == 0 {
-        return; // ждём корректный первый байт
+        return; // wait for a valid first byte
     }
 
     pkt[*idx] = byte;
@@ -121,17 +118,17 @@ pub fn poll() {
         let dx = pkt[1];
         let dy = pkt[2];
 
-        // смещения знаковые 9 бит через флаги но берём простой вариант i8
+        // offsets are signed use simple i8 version
         let mdx = dx as i8 as i32;
         let mdy = dy as i8 as i32;
 
         let mut s = STATE.lock();
         s.x += mdx;
-        s.y -= mdy; // экран Y растёт вниз мышь вверх инвертируем
+        s.y -= mdy; // screen y grows down invert mouse y
         s.left = flags & 1 != 0;
         s.right = flags & 2 != 0;
 
-        // ограничиваем в пределах экрана
+        // clamp to screen bounds
         let (w, h) = crate::framebuffer::dimensions();
         if s.x < 0 {
             s.x = 0;
@@ -148,7 +145,7 @@ pub fn poll() {
     }
 }
 
-// текущее состояние копия
+// current state copy
 pub fn get() -> (i32, i32, bool, bool) {
     let s = STATE.lock();
     (s.x, s.y, s.left, s.right)

@@ -1,18 +1,16 @@
-// HTML парсер с расширенным набором тегов.
-// поддержка h1 h6 p b i u code a br hr ul ol li blockquote center
-// font color title. игнорирует html body head обёртки.
+// html parser with extended tag support ignores html body head wrappers
 use alloc::vec::Vec;
 use alloc::string::String;
 
-// тип блока для рендеринга
+// block kind for rendering
 #[derive(Clone, Copy, PartialEq)]
 pub enum BlockKind {
-    Text,      // обычный текст
-    Heading,   // заголовок
-    ListItem,  // элемент списка с буллетом
-    Rule,      // горизонтальная линия hr
-    Quote,     // цитата с отступом
-    Code,      // код на фоне
+    Text,      // plain text
+    Heading,
+    ListItem,  // list item with bullet
+    Rule,      // hr horizontal line
+    Quote,     // indented quote
+    Code,      // code with background
 }
 
 pub struct Block {
@@ -20,13 +18,13 @@ pub struct Block {
     pub kind: BlockKind,
     pub scale: usize,
     pub color: u32,
-    pub bg: Option<u32>,    // фон блока если есть
+    pub bg: Option<u32>,    // block background if any
     pub underline: bool,
     pub is_link: bool,
-    pub indent: usize,      // отступ слева в пикселях
-    pub center: bool,       // центрировать
+    pub indent: usize,      // left indent in pixels
+    pub center: bool,       // center align
     pub br_after: bool,
-    pub list_num: usize,    // номер для нумерованного списка 0 если буллет
+    pub list_num: usize,    // number for ordered list 0 means bullet
 }
 
 impl Block {
@@ -47,7 +45,7 @@ impl Block {
     }
 }
 
-// цвета
+// colors
 const COL_TEXT: u32 = 0x000000;
 const COL_LINK: u32 = 0x0000EE;
 const COL_CODE: u32 = 0x00AA00;
@@ -55,7 +53,7 @@ const COL_CODE_BG: u32 = 0x202020;
 const COL_QUOTE: u32 = 0x666666;
 const COL_BOLD: u32 = 0xAA0000;
 
-// состояние стиля во время парсинга
+// style state during parsing
 #[derive(Clone, Copy)]
 struct Style {
     scale: usize,
@@ -85,7 +83,7 @@ impl Style {
     }
 }
 
-// разобрать имя цвета в число
+// parse color name into a value
 fn color_by_name(name: &str) -> u32 {
     match name.trim() {
         "red" => 0xFF0000,
@@ -101,11 +99,11 @@ fn color_by_name(name: &str) -> u32 {
     }
 }
 
-// извлечь значение атрибута color из строки тега типа font color=red
+// extract color attribute value from a tag string
 fn extract_color(inner: &str) -> Option<u32> {
     if let Some(pos) = inner.find("color") {
         let rest = &inner[pos + 5..];
-        // пропускаем = и кавычки пробелы
+        // skip equals quotes and spaces
         let val: String = rest
             .chars()
             .skip_while(|c| *c == '=' || *c == '"' || *c == '\'' || *c == ' ')
@@ -132,10 +130,10 @@ pub fn parse(html: &str) -> Document {
     let mut style = Style::base();
     let mut text_buf = String::new();
     let mut in_title = false;
-    let mut list_counter = 0usize; // для ol
+    let mut list_counter = 0usize; // for ordered lists
     let mut ordered = false;
 
-    // сброс накопленного текста в блок
+    // flush accumulated text into a block
     fn flush(blocks: &mut Vec<Block>, buf: &mut String, style: &Style, br: bool, list_num: usize) {
         let t = buf.trim();
         if !t.is_empty() {
@@ -161,7 +159,7 @@ pub fn parse(html: &str) -> Document {
 
     while i < bytes.len() {
         if bytes[i] == b'<' {
-            // сбросить текст перед тегом
+            // flush text before the tag
             if in_title {
                 if let Some(t) = text_buf.trim().get(..) {
                     if !t.is_empty() {
@@ -220,7 +218,7 @@ pub fn parse(html: &str) -> Document {
                         blocks.push(b);
                     }
                     "title" => { in_title = !closing; }
-                    // игнорируем обёртки
+                    // ignore wrapper tags
                     "html" | "body" | "head" | "meta" | "div" | "span" => {}
                     _ => {}
                 }
@@ -236,7 +234,7 @@ pub fn parse(html: &str) -> Document {
     Document { title, blocks }
 }
 
-// вспомогательный трейт для to_lowercase в no_std на байтах ascii
+// helper trait for ascii to_lowercase in no_std
 trait LowerAscii {
     fn to_lowercase_ascii(&self) -> String;
 }

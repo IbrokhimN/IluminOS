@@ -3,36 +3,36 @@ use crate::keyboard::{self, KEY_BACKSPACE, KEY_ENTER, KEY_ESC};
 use crate::framebuffer::{self, CYAN, GREEN, YELLOW, WHITE, GRAY};
 use crate::{print, println, print_color};
 
-const ROWS: usize = 23; // строк текста (24 экрана минус строка статуса)
-const COLS: usize = 79; // символов в строке
+const ROWS: usize = 23; // text rows screen minus status bar
+const COLS: usize = 79; // chars per row
 
-// Режимы редактора
+// editor modes
 #[derive(PartialEq, Clone, Copy)]
 enum Mode {
-    Normal,  // навигация/команды
-    Insert,  // ввод текста
-    Command, // ввод команды после ":"
+    Normal,  // navigation and commands
+    Insert,  // typing text
+    Command, // typing a command after colon
 }
 
-// Всё состояние редактора
+// full editor state
 struct Editor {
-    grid: [[u8; COLS]; ROWS],  // холст символов
-    line_len: [usize; ROWS],   // длина каждой строки
-    n_lines: usize,            // сколько строк используется
-    cur_r: usize,              // курсор: строка
-    cur_c: usize,              // курсор: столбец
+    grid: [[u8; COLS]; ROWS],  // character canvas
+    line_len: [usize; ROWS],   // length of each line
+    n_lines: usize,            // lines in use
+    cur_r: usize,              // cursor row
+    cur_c: usize,              // cursor column
     mode: Mode,
-    cmd: [u8; 16],             // буфер команды после ":"
+    cmd: [u8; 16],             // command buffer after colon
     cmd_len: usize,
-    pending: u8,               // ожидание второй клавиши (для dd, dw)
-    dirty: bool,               // были несохранённые изменения
-    quit: bool,                // пора выходить
+    pending: u8,               // waiting for second key for dd dw
+    dirty: bool,               // unsaved changes present
+    quit: bool,                // time to exit
 }
 
-// точка входа: открыть файл name в редакторе
+// entry point open file name in the editor
 pub fn run(name: &str) {
     let mut ed = Editor {
-        grid: [[b' '; COLS]; ROWS], // пустой холст из пробелов
+        grid: [[b' '; COLS]; ROWS], // blank canvas of spaces
         line_len: [0; ROWS],
         n_lines: 1,
         cur_r: 0, cur_c: 0,
@@ -42,12 +42,12 @@ pub fn run(name: &str) {
         dirty: false, quit: false,
     };
 
-    ed.load(name);     // загрузить содержимое файла в сетку
-    ed.redraw(name);   // нарисовать
+    ed.load(name);     // load file contents into the grid
+    ed.redraw(name);   // draw
 
-    // главный цикл: клавиша -> обработчик режима -> перерисовка
+    // main loop key then mode handler then redraw
     while !ed.quit {
-        let key = keyboard::read_key(); // блокирующее чтение
+        let key = keyboard::read_key(); // blocking read
         match ed.mode {
             Mode::Normal => ed.handle_normal(key, name),
             Mode::Insert => ed.handle_insert(key),
@@ -56,11 +56,11 @@ pub fn run(name: &str) {
         ed.redraw(name);
     }
 
-    framebuffer::clear(); // при выходе — чистим экран
+    framebuffer::clear(); // clear screen on exit
 }
 
 impl Editor {
-    // прочитать файл и разложить по сетке (строки по '\n')
+    // read file and split into grid lines by newline
     fn load(&mut self, name: &str) {
         let mut buf = [0u8; FILE_MAX_BYTES];
         if let Ok(size) = fs::read(name, &mut buf) {
@@ -68,15 +68,15 @@ impl Editor {
             let mut c = 0;
             for &b in &buf[..size] {
                 if b == b'\n' {
-                    self.line_len[r] = c; // конец строки
+                    self.line_len[r] = c; // end of line
                     r += 1;
                     c = 0;
-                    if r >= ROWS {        // файл длиннее экрана — обрезаем
+                    if r >= ROWS {        // file longer than screen truncate
                         r = ROWS - 1;
                         break;
                     }
                 } else if c < COLS {
-                    self.grid[r][c] = b;  // символ в сетку
+                    self.grid[r][c] = b;  // char into grid
                     c += 1;
                 }
             }
@@ -91,17 +91,16 @@ impl Editor {
         self.line_len[self.cur_r]
     }
 
-    // не дать курсору выйти за пределы строки/текста
+    // keep cursor within line and text bounds
     fn clamp_cursor(&mut self) {
         if self.cur_r >= self.n_lines {
             self.cur_r = self.n_lines - 1;
         }
-        // в Insert курсор может стоять ПОСЛЕ последнего символа (чтобы дописывать),
-        // в Normal — только НА символе, поэтому предел на 1 меньше
+        // insert mode cursor can sit past last char normal mode sits on a char
         let max_c = if self.mode == Mode::Insert {
             self.cur_line_len()
         } else {
-            self.cur_line_len().saturating_sub(1) // saturating_sub: не уйдёт ниже 0
+            self.cur_line_len().saturating_sub(1) // wont go below zero
         };
         if self.cur_c > max_c {
             self.cur_c = max_c;
@@ -109,12 +108,12 @@ impl Editor {
     }
 
     fn handle_normal(&mut self, key: u8, _name: &str) {
-        // Если ждём вторую клавишу после 'd' (для dd/dw):
+        // waiting for second key after d for dd or dw
         if self.pending == b'd' {
             self.pending = 0;
             match key {
-                b'd' => self.delete_line(), // dd — удалить строку
-                b'w' => self.delete_word(), // dw — удалить слово
+                b'd' => self.delete_line(), // dd deletes a line
+                b'w' => self.delete_word(), // dw deletes a word
                 _ => {}
             }
             self.clamp_cursor();
@@ -122,50 +121,50 @@ impl Editor {
         }
 
         match key {
-            // движение курсора (классика vim)
+            // cursor movement classic vim keys
             b'h' => if self.cur_c > 0 { self.cur_c -= 1; },
             b'l' => if self.cur_c + 1 < self.cur_line_len() { self.cur_c += 1; },
             b'j' => if self.cur_r + 1 < self.n_lines { self.cur_r += 1; self.clamp_cursor(); },
             b'k' => if self.cur_r > 0 { self.cur_r -= 1; self.clamp_cursor(); },
-            b'0' => self.cur_c = 0,                                   // в начало строки
-            b'$' => self.cur_c = self.cur_line_len().saturating_sub(1), // в конец строки
-            // входы в режим Insert разными способами:
-            b'i' => self.mode = Mode::Insert,                        // перед курсором
-            b'a' => { if self.cur_line_len() > 0 { self.cur_c += 1; } self.mode = Mode::Insert; }, // после
-            b'A' => { self.cur_c = self.cur_line_len(); self.mode = Mode::Insert; },  // конец строки
-            b'I' => { self.cur_c = 0; self.mode = Mode::Insert; },   // начало строки
-            b'o' => { self.open_line_below(); self.mode = Mode::Insert; }, // новая строка ниже
-            b'x' => self.delete_char(),                              // удалить символ под курсором
-            b'd' => self.pending = b'd',                             // ждём вторую клавишу (dd/dw)
-            b':' => { self.mode = Mode::Command; self.cmd_len = 0; }, // войти в командный режим
+            b'0' => self.cur_c = 0,                                   // start of line
+            b'$' => self.cur_c = self.cur_line_len().saturating_sub(1), // end of line
+            // ways to enter insert mode
+            b'i' => self.mode = Mode::Insert,                        // before cursor
+            b'a' => { if self.cur_line_len() > 0 { self.cur_c += 1; } self.mode = Mode::Insert; }, // after cursor
+            b'A' => { self.cur_c = self.cur_line_len(); self.mode = Mode::Insert; },  // end of line
+            b'I' => { self.cur_c = 0; self.mode = Mode::Insert; },   // start of line
+            b'o' => { self.open_line_below(); self.mode = Mode::Insert; }, // new line below
+            b'x' => self.delete_char(),                              // delete char under cursor
+            b'd' => self.pending = b'd',                             // wait for second key dd dw
+            b':' => { self.mode = Mode::Command; self.cmd_len = 0; }, // enter command mode
             _ => {}
         }
     }
 
     fn handle_insert(&mut self, key: u8) {
         match key {
-            KEY_ESC => { // выход в Normal
+            KEY_ESC => { // exit to normal mode
                 self.mode = Mode::Normal;
                 if self.cur_c > 0 { self.cur_c -= 1; }
                 self.clamp_cursor();
             }
             KEY_ENTER => self.insert_newline(),
             KEY_BACKSPACE => self.backspace(),
-            0x20..=0x7e | 0x80..=0xff => self.insert_char(key), // печатный символ (в т.ч. кириллица)
-            _ => {} // стрелки и прочее игнорируем
+            0x20..=0x7e | 0x80..=0xff => self.insert_char(key), // printable char including cyrillic
+            _ => {} // ignore arrows and other keys
         }
     }
 
     fn handle_command(&mut self, key: u8, name: &str) {
         match key {
-            KEY_ESC => { self.mode = Mode::Normal; self.cmd_len = 0; }, // отмена
-            KEY_ENTER => { // выполнить команду
+            KEY_ESC => { self.mode = Mode::Normal; self.cmd_len = 0; }, // cancel
+            KEY_ENTER => { // run the command
                 self.exec_command(name);
                 self.mode = Mode::Normal;
                 self.cmd_len = 0;
             }
             KEY_BACKSPACE => if self.cmd_len > 0 { self.cmd_len -= 1; },
-            0x20..=0x7e | 0x80..=0xff => if self.cmd_len < self.cmd.len() { // накапливаем команду
+            0x20..=0x7e | 0x80..=0xff => if self.cmd_len < self.cmd.len() { // build up the command
                 self.cmd[self.cmd_len] = key;
                 self.cmd_len += 1;
             },
@@ -173,49 +172,49 @@ impl Editor {
         }
     }
 
-    // выполнить :w / :q / :wq / :q!
+    // run w q wq or q! commands
     fn exec_command(&mut self, name: &str) {
         let cmd = &self.cmd[..self.cmd_len];
         match cmd {
-            b"w" => self.save(name),                        // сохранить
-            b"q" => self.quit = true,                       // выйти
-            b"wq" | b"x" => { self.save(name); self.quit = true; }, // сохранить и выйти
-            b"q!" => self.quit = true,                      // выйти без сохранения
+            b"w" => self.save(name),                        // save
+            b"q" => self.quit = true,                       // quit
+            b"wq" | b"x" => { self.save(name); self.quit = true; }, // save and quit
+            b"q!" => self.quit = true,                      // quit without saving
             _ => {}
         }
     }
 
-    // вставить символ в текущую позицию (сдвинув хвост вправо)
+    // insert char at cursor shifting the tail right
     fn insert_char(&mut self, ch: u8) {
         let len = self.line_len[self.cur_r];
         if len >= COLS {
-            return; // строка полна
+            return; // line is full
         }
-        // сдвигаем символы правее курсора на 1 вправо
+        // shift chars right of cursor one step right
         let mut i = len;
         while i > self.cur_c {
             self.grid[self.cur_r][i] = self.grid[self.cur_r][i - 1];
             i -= 1;
         }
-        self.grid[self.cur_r][self.cur_c] = ch; // ставим новый символ
+        self.grid[self.cur_r][self.cur_c] = ch; // place new char
         self.line_len[self.cur_r] += 1;
         self.cur_c += 1;
         self.dirty = true;
     }
 
-    // Enter: разбить строку на две в позиции курсора
+    // enter splits the line at cursor position
     fn insert_newline(&mut self) {
         if self.n_lines >= ROWS {
-            return; // достигли предела строк
+            return; // reached line limit
         }
-        // сдвигаем все строки ниже курсора на 1 вниз (освобождаем место)
+        // shift lines below cursor down one to make room
         let mut r = self.n_lines;
         while r > self.cur_r + 1 {
             self.grid[r] = self.grid[r - 1];
             self.line_len[r] = self.line_len[r - 1];
             r -= 1;
         }
-        // хвост текущей строки (после курсора) переносим на новую строку
+        // move current line tail after cursor to the new line
         let tail_start = self.cur_c;
         let tail_len = self.line_len[self.cur_r] - tail_start;
         let mut new_line = [b' '; COLS];
@@ -224,7 +223,7 @@ impl Editor {
         }
         self.grid[self.cur_r + 1] = new_line;
         self.line_len[self.cur_r + 1] = tail_len;
-        self.line_len[self.cur_r] = tail_start; // обрезаем текущую
+        self.line_len[self.cur_r] = tail_start; // truncate current line
 
         self.n_lines += 1;
         self.cur_r += 1;
@@ -232,10 +231,10 @@ impl Editor {
         self.dirty = true;
     }
 
-    // удалить символ слева; в начале строки — склеить с предыдущей
+    // delete char to the left at line start merge with previous
     fn backspace(&mut self) {
         if self.cur_c > 0 {
-            // сдвигаем хвост строки влево, затирая символ
+            // shift line tail left overwriting the char
             let len = self.line_len[self.cur_r];
             for i in (self.cur_c - 1)..len.saturating_sub(1) {
                 self.grid[self.cur_r][i] = self.grid[self.cur_r][i + 1];
@@ -245,7 +244,7 @@ impl Editor {
             self.cur_c -= 1;
             self.dirty = true;
         } else if self.cur_r > 0 {
-            // курсор в начале строки — приклеиваем строку к предыдущей
+            // cursor at line start merge into previous line
             let prev_len = self.line_len[self.cur_r - 1];
             let cur_len = self.line_len[self.cur_r];
             if prev_len + cur_len <= COLS {
@@ -253,20 +252,20 @@ impl Editor {
                     self.grid[self.cur_r - 1][prev_len + i] = self.grid[self.cur_r][i];
                 }
                 self.line_len[self.cur_r - 1] = prev_len + cur_len;
-                // сдвигаем строки ниже вверх (текущая исчезла)
+                // shift lines below up current line is gone
                 for r in self.cur_r..(self.n_lines - 1) {
                     self.grid[r] = self.grid[r + 1];
                     self.line_len[r] = self.line_len[r + 1];
                 }
                 self.n_lines -= 1;
                 self.cur_r -= 1;
-                self.cur_c = prev_len; // курсор на месте склейки
+                self.cur_c = prev_len; // cursor at the merge point
                 self.dirty = true;
             }
         }
     }
 
-    // удалить символ под курсором (команда x)
+    // delete char under cursor command x
     fn delete_char(&mut self) {
         let len = self.line_len[self.cur_r];
         if self.cur_c < len {
@@ -282,17 +281,17 @@ impl Editor {
         }
     }
 
-    // удалить целую строку (команда dd)
+    // delete whole line command dd
     fn delete_line(&mut self) {
         if self.n_lines <= 1 {
-            // единственная строка — просто очищаем
+            // only line just clear it
             self.grid[0] = [b' '; COLS];
             self.line_len[0] = 0;
             self.cur_c = 0;
             self.dirty = true;
             return;
         }
-        // сдвигаем строки ниже вверх
+        // shift lines below up
         for r in self.cur_r..(self.n_lines - 1) {
             self.grid[r] = self.grid[r + 1];
             self.line_len[r] = self.line_len[r + 1];
@@ -305,23 +304,23 @@ impl Editor {
         self.dirty = true;
     }
 
-    // удалить слово от курsora (команда dw)
+    // delete word from cursor command dw
     fn delete_word(&mut self) {
         let len = self.line_len[self.cur_r];
         if self.cur_c >= len {
             return;
         }
-        // ищем конец слова (до пробела)
+        // find end of word up to space
         let mut end = self.cur_c;
         while end < len && self.grid[self.cur_r][end] != b' ' {
             end += 1;
         }
-        // ...и захватываем пробелы после него
+        // and include trailing spaces
         while end < len && self.grid[self.cur_r][end] == b' ' {
             end += 1;
         }
-        let del = end - self.cur_c; // сколько символов удалить
-        // сдвигаем хвост на место удалённого
+        let del = end - self.cur_c; // chars to delete
+        // shift tail into the deleted space
         for i in self.cur_c..(len - del) {
             self.grid[self.cur_r][i] = self.grid[self.cur_r][i + del];
         }
@@ -333,7 +332,7 @@ impl Editor {
         self.dirty = true;
     }
 
-    // вставить пустую строку ниже (команда o)
+    // insert empty line below command o
     fn open_line_below(&mut self) {
         if self.n_lines >= ROWS {
             return;
@@ -352,7 +351,7 @@ impl Editor {
         self.dirty = true;
     }
 
-    // собрать сетку обратно в байты (строки через '\n') и записать в файл
+    // rebuild bytes from grid lines joined by newline and save
     fn save(&mut self, name: &str) {
         let mut out = [0u8; FILE_MAX_BYTES];
         let mut n = 0;
@@ -364,7 +363,7 @@ impl Editor {
                     n += 1;
                 }
             }
-            // между строками ставим '\n' (кроме последней)
+            // newline between lines except the last
             if r + 1 < self.n_lines && n < FILE_MAX_BYTES {
                 out[n] = b'\n';
                 n += 1;
@@ -374,15 +373,15 @@ impl Editor {
         self.dirty = false;
     }
 
-    // перерисовать весь экран: текст, статус-бар, курсор
+    // redraw whole screen text status bar cursor
     fn redraw(&self, name: &str) {
         framebuffer::clear();
         for r in 0..self.n_lines {
             let len = self.line_len[r];
-            highlight_line(&self.grid[r], len); // с подсветкой синтаксиса
+            highlight_line(&self.grid[r], len); // with syntax highlighting
             println!();
         }
-        // заполняем пустыми строками до низа экрана
+        // fill remaining rows blank to bottom of screen
         for _ in self.n_lines..ROWS {
             println!();
         }
@@ -390,7 +389,7 @@ impl Editor {
         self.draw_cursor();
     }
 
-    // нижняя строка: режим, имя файла, метка изменений, позиция
+    // status bar mode filename dirty mark position
     fn draw_status(&self, name: &str) {
         let mode_str = match self.mode {
             Mode::Normal => "NORMAL",
@@ -403,10 +402,10 @@ impl Editor {
             Mode::Command => YELLOW,
         };
         print_color!(mode_color, "-- {} --", mode_str);
-        let dirty_mark = if self.dirty { "[+]" } else { "" }; // [+] = есть несохранённое
+        let dirty_mark = if self.dirty { "[+]" } else { "" }; // plus means unsaved
         print_color!(WHITE, " {} {}  {}:{}", name, dirty_mark, self.cur_r + 1, self.cur_c + 1);
 
-        // в командном режиме показываем набираемую команду
+        // command mode shows the command being typed
         if self.mode == Mode::Command {
             print!("  :");
             for i in 0..self.cmd_len {
@@ -415,23 +414,23 @@ impl Editor {
         }
     }
 
-    // подчёркивание под текущей клеткой
+    // underline under current cell
     fn draw_cursor(&self) {
         framebuffer::draw_edit_cursor(self.cur_c, self.cur_r);
     }
 }
 
-// Подсветка синтаксиса Rust (раскрашивает строку по типам токенов)
+// rust syntax highlighting colors a line by token type
 
-// цвета для разных видов токенов
-const COL_KEYWORD: u32 = 0xFF8844; // оранжевый — ключевые слова
-const COL_STRING: u32 = GREEN;     // зелёный — строки
-const COL_NUMBER: u32 = YELLOW;    // жёлтый — числа
-const COL_COMMENT: u32 = GRAY;     // серый — комментарии
-const COL_TYPE: u32 = CYAN;        // голубой — типы (с Заглавной)
-const COL_NORMAL: u32 = WHITE;     // белый — всё остальное
+// token colors
+const COL_KEYWORD: u32 = 0xFF8844; // orange for keywords
+const COL_STRING: u32 = GREEN;     // green for strings
+const COL_NUMBER: u32 = YELLOW;    // yellow for numbers
+const COL_COMMENT: u32 = GRAY;     // gray for comments
+const COL_TYPE: u32 = CYAN;        // cyan for capitalized types
+const COL_NORMAL: u32 = WHITE;     // white for everything else
 
-// список ключевых слов Rust для подсветки
+// list of rust keywords to highlight
 const KEYWORDS: &[&[u8]] = &[
     b"fn", b"let", b"mut", b"if", b"else", b"for", b"while", b"loop",
     b"match", b"return", b"break", b"continue", b"struct", b"enum",
@@ -458,14 +457,13 @@ fn is_keyword(word: &[u8]) -> bool {
     false
 }
 
-// печатает строку, раскрашивая токены (мини-лексер)
-// Идёт по символам и решает, каким цветом красить текущий кусок
+// prints a line coloring tokens a tiny lexer
 fn highlight_line(line: &[u8; COLS], len: usize) {
     let mut i = 0;
     while i < len {
         let c = line[i];
 
-        // комментарий "//" — до конца строки серым
+        // line comment gray to end of line
         if c == b'/' && i + 1 < len && line[i + 1] == b'/' {
             framebuffer::set_color(COL_COMMENT);
             while i < len {
@@ -475,7 +473,7 @@ fn highlight_line(line: &[u8; COLS], len: usize) {
             break;
         }
 
-        // строка в двойных кавычках — зелёным
+        // double quoted string in green
         if c == b'"' {
             framebuffer::set_color(COL_STRING);
             print!("{}", c as char);
@@ -485,13 +483,13 @@ fn highlight_line(line: &[u8; COLS], len: usize) {
                 print!("{}", ch as char);
                 i += 1;
                 if ch == b'"' {
-                    break; // закрывающая кавычка (экранирование не учитываем — упрощение)
+                    break; // closing quote escapes not handled
                 }
             }
             continue;
         }
 
-        // символ в одинарных кавычках — тоже зелёным
+        // single quoted char also green
         if c == b'\'' {
             framebuffer::set_color(COL_STRING);
             print!("{}", c as char);
@@ -507,7 +505,7 @@ fn highlight_line(line: &[u8; COLS], len: usize) {
             continue;
         }
 
-        // число — жёлтым (учитываем hex-цифры, точку, _ , x)
+        // number in yellow handles hex digits dot underscore x
         if is_digit(c) {
             framebuffer::set_color(COL_NUMBER);
             while i < len && (is_digit(line[i]) || line[i] == b'.' || line[i] == b'_'
@@ -519,7 +517,7 @@ fn highlight_line(line: &[u8; COLS], len: usize) {
             continue;
         }
 
-        // идентификатор или ключевое слово
+        // identifier or keyword
         if is_ident_char(c) {
             let start = i;
             while i < len && is_ident_char(line[i]) {
@@ -527,11 +525,11 @@ fn highlight_line(line: &[u8; COLS], len: usize) {
             }
             let word = &line[start..i];
             let color = if is_keyword(word) {
-                COL_KEYWORD               // ключевое слово — оранжевым
+                COL_KEYWORD               // keyword in orange
             } else if word[0] >= b'A' && word[0] <= b'Z' {
-                COL_TYPE                  // с Заглавной — считаем типом, голубым
+                COL_TYPE                  // capitalized treated as a type in cyan
             } else {
-                COL_NORMAL                // обычное имя — белым
+                COL_NORMAL                // plain name in white
             };
             framebuffer::set_color(color);
             for &b in word {
@@ -540,10 +538,10 @@ fn highlight_line(line: &[u8; COLS], len: usize) {
             continue;
         }
 
-        // всё прочее (скобки, операторы) — белым
+        // everything else brackets operators in white
         framebuffer::set_color(COL_NORMAL);
         print!("{}", c as char);
         i += 1;
     }
-    framebuffer::set_color(WHITE); // вернуть цвет по умолчанию
+    framebuffer::set_color(WHITE); // restore default color
 }

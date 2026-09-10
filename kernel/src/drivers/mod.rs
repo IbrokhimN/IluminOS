@@ -1,4 +1,4 @@
-// драйверы железа
+// hardware drivers
 pub mod port;
 pub mod keyboard;
 pub mod mouse;

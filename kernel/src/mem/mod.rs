@@ -1,2 +1,2 @@
-// память
+// memory
 pub mod allocator;

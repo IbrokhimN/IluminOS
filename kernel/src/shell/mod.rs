@@ -1,4 +1,4 @@
-// tty shell простой repl с папками
+// tty shell a simple repl with folders
 use crate::editor;
 use crate::fs::{self, FILE_MAX_BYTES, NAME_MAX};
 use crate::keyboard::{self, KEY_BACKSPACE, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN};
@@ -12,7 +12,7 @@ use alloc::string::String;
 const LINE_MAX: usize = 128;
 const HISTORY_MAX: usize = 32;
 
-// все известные команды (для автодополнения и списка)
+// all known commands for autocomplete and listing
 const COMMANDS: &[&str] = &[
     "help", "clear", "cls", "ls", "ll", "echo", "touch", "cat", "edit", "rm",
     "df", "mkdir", "cd", "pwd", "mem", "memtest", "wasm", "run", "rand", "gui",
@@ -21,7 +21,7 @@ const COMMANDS: &[&str] = &[
     "lock", "beep", "reboot", "shutdown", "neofetch", "sleep", "dice", "banner",
 ];
 
-// история команд и счётчик выполненных
+// command history and executed count
 struct ShellState {
     history: Vec<String>,
     count: u32,
@@ -59,7 +59,7 @@ pub fn run() -> ! {
 
 fn push_history(line: &str) {
     let st = state();
-    // не дублируем подряд одинаковые
+    // dont duplicate consecutive identical entries
     if st.history.last().map(|s| s.as_str()) == Some(line) {
         return;
     }
@@ -69,7 +69,7 @@ fn push_history(line: &str) {
     }
 }
 
-// приглашение: [N] путь >
+// prompt shows count and current path
 fn print_prompt() {
     let n = state().count;
     print_color!(GRAY, "[{}] ", n);
@@ -84,7 +84,7 @@ fn print_prompt() {
 fn read_line(buf: &mut [u8; LINE_MAX]) -> usize {
     let mut len = 0;
     let mut blink: u32 = 0;
-    // индекс просмотра истории: len истории = "текущая пустая строка"
+    // history browse index len means the current empty line
     let mut hist_idx = state().history.len();
     loop {
         if let Some(key) = keyboard::try_read_key() {
@@ -142,7 +142,7 @@ fn read_line(buf: &mut [u8; LINE_MAX]) -> usize {
     }
 }
 
-// стереть текущую строку с экрана и напечатать новую
+// erase current line on screen and print a new one
 fn replace_line(buf: &mut [u8; LINE_MAX], cur_len: usize, new: &str) -> usize {
     for _ in 0..cur_len {
         print!("{}", 0x08 as char);
@@ -156,7 +156,7 @@ fn replace_line(buf: &mut [u8; LINE_MAX], cur_len: usize, new: &str) -> usize {
     n
 }
 
-// автодополнение имени команды по Tab (дополняем только первое слово)
+// tab completes command name only the first word
 fn tab_complete(buf: &mut [u8; LINE_MAX], len: usize) -> usize {
     if buf[..len].contains(&b' ') {
         return len;
@@ -305,7 +305,7 @@ fn cmd_ls() {
     }
 }
 
-// цвет файла по расширению
+// file color by extension
 fn color_for_file(name: &str) -> u32 {
     if name.ends_with(".txt") || name.ends_with(".md") {
         WHITE
@@ -688,7 +688,7 @@ fn cmd_cp(arg: &str) {
     }
 }
 
-// найти сетевую карту RTL8139 через PCI
+// find the rtl8139 card via pci
 fn cmd_lspci() {
     match crate::tcp::pci::find_device(
         crate::tcp::pci::RTL8139_VENDOR,
@@ -704,7 +704,7 @@ fn cmd_lspci() {
     }
 }
 
-// разбудить карту и прочитать MAC
+// wake the card and read its mac
 fn cmd_nic() {
     if !crate::tcp::rtl8139::init() {
         print_color!(RED, "no network card (нужен -device rtl8139 в QEMU)\n");
@@ -724,7 +724,7 @@ fn cmd_nic() {
     }
 }
 
-// пропинговать IP ICMP echo
+// icmp echo ping an ip
 fn cmd_ping(arg: &str) {
     if arg.is_empty() {
         print_color!(RED, "usage: ping <ip>   (напр. ping 10.0.2.2)\n");
@@ -733,7 +733,7 @@ fn cmd_ping(arg: &str) {
     crate::tcp::net::cmd_ping(arg);
 }
 
-// заблокировать экран вернуться на вход
+// lock screen back to login
 fn cmd_lock() {
     crate::login::run();
     framebuffer::clear();
@@ -741,13 +741,13 @@ fn cmd_lock() {
     print_color!(GREEN, "unlocked.\n");
 }
 
-// короткий тестовый писк
+// short test beep
 fn cmd_beep() {
     crate::sound::beep(880, 1);
     print_color!(GRAY, "beep!\n");
 }
 
-// перезагрузка через контроллер клавиатуры порт 0x64
+// reboot via keyboard controller port 0x64
 fn cmd_reboot() {
     print_color!(YELLOW, "rebooting...\n");
     crate::sound::delay(2);
@@ -755,17 +755,17 @@ fn cmd_reboot() {
     loop { core::hint::spin_loop(); }
 }
 
-// выключение в QEMU через ACPI порт 0x604
+// shutdown in qemu via acpi port 0x604
 fn cmd_shutdown() {
     print_color!(YELLOW, "shutting down...\n");
     crate::sound::delay(2);
     crate::port::outw(0x604, 0x2000);
-    // не сработало значит реальное железо
+    // no effect means real hardware
     print_color!(RED, "shutdown not supported on this machine.\n");
     loop { core::hint::spin_loop(); }
 }
 
-// сводка о системе как neofetch
+// system summary like neofetch
 fn cmd_neofetch() {
     let total = allocator::heap_size();
     let used = allocator::heap_used();
@@ -774,7 +774,7 @@ fn cmd_neofetch() {
     let disk_total = fs::total_blocks();
     let (sw, sh) = framebuffer::dimensions();
 
-    // лого слева инфо справа
+    // logo on the left info on the right
     print_color!(CYAN,    "    ___         ");  print_color!(GREEN, "root");
     print_color!(GRAY, "@"); print_color!(GREEN, "iluminos\n");
     print_color!(CYAN,    "   / _ \\        "); print_color!(GRAY, "-----------------\n");
@@ -786,13 +786,13 @@ fn cmd_neofetch() {
     print_color!(GRAY,    "               ");  print_color!(YELLOW, " Memory:  "); println!("{} / {} KB", used/1024, total/1024);
     print_color!(GRAY,    "               ");  print_color!(YELLOW, " Disk:    "); println!("{} / {} blocks", disk_used, disk_total);
     println!();
-    // палитра
+    // color palette
     print_color!(RED, "  ###"); print_color!(GREEN, "###"); print_color!(YELLOW, "###");
     print_color!(BLUE, "###"); print_color!(MAGENTA, "###"); print_color!(CYAN, "###");
     print_color!(WHITE, "###\n");
 }
 
-// пауза на N единиц грубо секунды
+// pause for n units roughly seconds
 fn cmd_sleep(arg: &str) {
     if arg.is_empty() {
         print_color!(RED, "usage: sleep <n>\n");
@@ -808,7 +808,7 @@ fn cmd_sleep(arg: &str) {
     print_color!(GREEN, "awake.\n");
 }
 
-// бросок кубика 1..6 через рандом
+// dice roll 1 to 6 via rng
 fn cmd_dice() {
     let roll = crate::random::next_range(6) + 1;
     print_color!(YELLOW, "  you rolled: ");

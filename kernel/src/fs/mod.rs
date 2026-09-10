@@ -1,10 +1,8 @@
-// файловая система bitmap + inode + папки
-// разметка диска суперблок / bitmap / таблица inode / блоки данных
-// папка это inode с флагом is_dir
+// filesystem bitmap plus inode plus folders layout superblock bitmap inode table data blocks
 use crate::ata::{self, SECTOR_SIZE};
 use spin::Mutex;
 
-const MAGIC: u32 = 0x4D494E33; // "MIN3" - версия с папками
+const MAGIC: u32 = 0x4D494E33; // min3 version with folders
 
 const BITMAP_START: u32 = 1;
 const BITMAP_SECTORS: u32 = 2;
@@ -16,7 +14,7 @@ pub const MAX_FILES: usize = 64;
 pub const NAME_MAX: usize = 26;
 
 const DIRECT_BLOCKS: usize = 12;
-pub const FILE_MAX_BYTES: usize = DIRECT_BLOCKS * SECTOR_SIZE; // 6144
+pub const FILE_MAX_BYTES: usize = DIRECT_BLOCKS * SECTOR_SIZE; // 6144 bytes
 
 const INODE_SIZE: usize = 256;
 const INODES_PER_SECTOR: usize = SECTOR_SIZE / INODE_SIZE;
@@ -25,10 +23,10 @@ const TOTAL_DATA_BLOCKS: u32 = 2000;
 
 pub const ROOT_INODE: usize = 0;
 
-// текущая директория (номер inode). глобальное состояние.
+// current directory inode global state
 static CWD: Mutex<usize> = Mutex::new(ROOT_INODE);
 
-// inode на диске used is_dir parent имя размер и 12 блоков
+// on disk inode used is_dir parent name size and 12 blocks
 #[derive(Clone)]
 pub struct Inode {
     pub used: bool,
@@ -184,7 +182,7 @@ fn write_inode(index: usize, node: &Inode) {
     ata::write_sector(sector, &buf);
 }
 
-// формат и инициализация диска
+// disk format and init
 
 fn format() {
     let mut sb = [0u8; SECTOR_SIZE];
@@ -200,11 +198,11 @@ fn format() {
         ata::write_sector(INODE_START + s, &zero);
     }
 
-    // создать корневую директорию (inode 0)
+    // create root directory inode 0
     let mut root = Inode::empty();
     root.used = true;
     root.is_dir = true;
-    root.parent = ROOT_INODE as u32; // корень сам себе родитель
+    root.parent = ROOT_INODE as u32; // root is its own parent
     root.name[0] = b'/';
     root.name_len = 1;
     write_inode(ROOT_INODE, &root);
@@ -220,13 +218,13 @@ pub fn init() {
     *CWD.lock() = ROOT_INODE;
 }
 
-// навигация по папкам
+// directory navigation
 
 pub fn cwd() -> usize {
     *CWD.lock()
 }
 
-// найти в директории dir запись с именем name -> вернуть индекс inode
+// find entry named name in dir return inode index
 fn find_in_dir(dir: usize, name: &str) -> Option<usize> {
     for i in 0..MAX_FILES {
         let n = read_inode(i);
@@ -237,12 +235,12 @@ fn find_in_dir(dir: usize, name: &str) -> Option<usize> {
     None
 }
 
-// найти файл в ТЕКУЩЕЙ директории (публичный, для shell/editor)
+// find file in current directory public for shell and editor
 pub fn find(name: &str) -> Option<usize> {
     find_in_dir(cwd(), name)
 }
 
-// список содержимого текущей директории: callback(имя, размер, это_папка)
+// list current directory callback name size is_dir
 pub fn list<F: FnMut(&str, u32, bool)>(mut f: F) {
     let dir = cwd();
     for i in 0..MAX_FILES {
@@ -255,7 +253,7 @@ pub fn list<F: FnMut(&str, u32, bool)>(mut f: F) {
     }
 }
 
-// список содержимого произвольной директории dir: callback(inode, имя, размер, папка)
+// list arbitrary directory callback inode name size is_dir
 pub fn list_dir<F: FnMut(usize, &str, u32, bool)>(dir: usize, mut f: F) {
     for i in 0..MAX_FILES {
         let n = read_inode(i);
@@ -267,14 +265,13 @@ pub fn list_dir<F: FnMut(usize, &str, u32, bool)>(dir: usize, mut f: F) {
     }
 }
 
-// рекурсивный поиск по имени начиная с dir. callback(полный_путь_фрагмент, папка).
-// вызывает f для каждого совпадения имени. глубина ограничена MAX_FILES.
+// recursive search by name from dir callback inode is_dir
 pub fn find_recursive<F: FnMut(usize, bool)>(dir: usize, name: &str, f: &mut F) {
     for i in 0..MAX_FILES {
         let n = read_inode(i);
         if n.used && n.parent as usize == dir && i != ROOT_INODE {
             if n.name_eq(name) {
-                f(i, n.is_dir); // нашли
+                f(i, n.is_dir); // found
             }
             if n.is_dir {
                 find_recursive(i, name, f);
@@ -283,7 +280,7 @@ pub fn find_recursive<F: FnMut(usize, bool)>(dir: usize, name: &str, f: &mut F) 
     }
 }
 
-// имя inode по индексу в буфер, вернуть длину
+// inode name by index into buffer return length
 pub fn name_of(idx: usize, out: &mut [u8; NAME_MAX]) -> usize {
     let n = read_inode(idx);
     let len = n.name_len.min(NAME_MAX);
@@ -291,7 +288,7 @@ pub fn name_of(idx: usize, out: &mut [u8; NAME_MAX]) -> usize {
     len
 }
 
-// найти свободный inode
+// find a free inode
 fn alloc_inode() -> Option<usize> {
     for i in 0..MAX_FILES {
         if !read_inode(i).used {
@@ -301,7 +298,7 @@ fn alloc_inode() -> Option<usize> {
     None
 }
 
-// создать файл в текущей директории
+// create a file in current directory
 pub fn create(name: &str) -> Result<(), &'static str> {
     if name.is_empty() || name.len() > NAME_MAX {
         return Err("name too long (max 26)");
@@ -321,7 +318,7 @@ pub fn create(name: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-// создать папку в текущей директории
+// create a folder in current directory
 pub fn mkdir(name: &str) -> Result<(), &'static str> {
     if name.is_empty() || name.len() > NAME_MAX {
         return Err("name too long (max 26)");
@@ -341,7 +338,7 @@ pub fn mkdir(name: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-// сменить директорию: name может быть ".." или именем подпапки
+// change directory name can be dotdot or a subfolder name
 pub fn chdir(name: &str) -> Result<(), &'static str> {
     if name == "/" {
         *CWD.lock() = ROOT_INODE;
@@ -365,15 +362,14 @@ pub fn chdir(name: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-// построить путь текущей директории в переданный буфер, вернуть срез
+// build current directory path into buffer return length
 pub fn pwd_into(buf: &mut [u8; 256]) -> usize {
     let cur = cwd();
     if cur == ROOT_INODE {
         buf[0] = b'/';
         return 1;
     }
-    // собираем компоненты от текущей до корня, потом переворачиваем.
-    // храним индексы inode по пути.
+    // collect components from current to root then reverse
     let mut chain = [0usize; 16];
     let mut depth = 0;
     let mut node_idx = cur;
@@ -382,7 +378,7 @@ pub fn pwd_into(buf: &mut [u8; 256]) -> usize {
         depth += 1;
         node_idx = read_inode(node_idx).parent as usize;
     }
-    // пишем от корня вниз
+    // write from root down
     let mut pos = 0;
     for d in (0..depth).rev() {
         buf[pos] = b'/';
@@ -398,7 +394,7 @@ pub fn pwd_into(buf: &mut [u8; 256]) -> usize {
     pos
 }
 
-// чтение и запись файлов
+// file read and write
 
 pub fn read(name: &str, out: &mut [u8; FILE_MAX_BYTES]) -> Result<usize, &'static str> {
     let idx = find(name).ok_or("file not found")?;
@@ -464,12 +460,12 @@ pub fn write(name: &str, data: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
-// удалить файл или пустую папку из текущей директории
+// remove file or empty folder from current directory
 pub fn remove(name: &str) -> Result<(), &'static str> {
     let idx = find(name).ok_or("not found")?;
     let mut node = read_inode(idx);
 
-    // нельзя удалить непустую папку
+    // cant remove a non empty folder
     if node.is_dir {
         for i in 0..MAX_FILES {
             let child = read_inode(i);

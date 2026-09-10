@@ -20,7 +20,7 @@ const ST_ERR: u8 = 0x01;
 pub const SECTOR_SIZE: usize = 512;
 
 fn wait_not_busy() {
-    // с таймаутом чтобы не зависнуть навечно если диска нет
+    // timeout so we dont hang forever if no disk
     let mut tries = 0u32;
     loop {
         if inb(STATUS) & ST_BSY == 0 {
@@ -52,7 +52,7 @@ fn wait_drq() -> bool {
     }
 }
 
-// выставить lba и выбрать slave (бит 4 = 1)
+// set lba and select slave drive
 fn select(lba: u32) {
     outb(DRIVE, 0xE0 | (((lba >> 24) & 0x0F) as u8));
     outb(SEC_COUNT, 1);

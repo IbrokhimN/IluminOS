@@ -1,44 +1,9 @@
-// ============================================================================
-// wm.rs — мини-фреймворк оконной системы (window manager)
-// ============================================================================
-//
-// ЗАЧЕМ ЭТОТ ФАЙЛ:
-//
-// Раньше каждое GUI-приложение (Terminal, Calc, Paint...) жило внутри одного
-// большого match в desktop.rs: там же рисовалась рамка окна, там же вручную
-// проверялось попал ли клик по кнопке закрытия, там же роутились события мыши.
-// Добавить новое приложение = скопировать эту обвязку в трёх местах.
-//
-// Идея фреймворка: описать ОДИН общий контракт "что умеет любое окно" — трейт
-// Widget. Тогда каждое приложение просто реализует этот трейт, а оконный
-// менеджер работает с любым из них одинаково, не зная какое именно это
-// приложение. Новое приложение = один `impl Widget for МоёОкно`, и всё.
-//
-// Это классический приём: вместо `match по типу приложения` — полиморфизм
-// через трейт-объект (`&mut dyn Widget`). Менеджер держит текущее активное
-// окно и вызывает у него методы трейта, не заботясь о конкретном типе.
-//
-// ЧТО ЗДЕСЬ ЕСТЬ:
-//   - Rect        — прямоугольник + проверка попадания точки (hit-test)
-//   - Widget      — трейт-контракт любого окна
-//   - примитивы   — panel / button / label (обёртки над framebuffer)
-//   - адаптеры    — impl Widget для существующих приложений (пока только Calc)
-//
-// ПОКА (шаг А): desktop.rs НЕ переписан и работает по-старому. Здесь мы только
-// вводим фреймворк и переводим ОДНО приложение (Calc) как образец, чтобы
-// убедиться что подход собирается и работает. На шаге Б переведём остальные
-// приложения и сам главный цикл desktop.rs на этот менеджер.
+// window manager framework widgets implement one trait the manager stays agnostic
 
 use crate::framebuffer::{fill_rect, draw_rect, draw_text_at};
 use crate::gui::widgets::apps::{Calc, Clock, Paint};
 
-// ----------------------------------------------------------------------------
-// Rect — прямоугольная область
-// ----------------------------------------------------------------------------
-//
-// Самая частая операция в GUI — "попал ли клик мыши в эту область?". Раньше это
-// писалось руками десятки раз: `mx >= x && mx < x+w && my >= y && my < y+h`.
-// Заворачиваем в тип с методом contains(), чтобы не повторять и не ошибаться.
+// rectangle area with a hit test helper
 
 #[derive(Clone, Copy)]
 pub struct Rect {
@@ -53,164 +18,111 @@ impl Rect {
         Rect { x, y, w, h }
     }
 
-    // попадает ли точка (px, py) внутрь прямоугольника
-    // правая/нижняя границы исключительные (как принято в пиксельных координатах)
+    // right and bottom edges are exclusive
     pub fn contains(&self, px: i32, py: i32) -> bool {
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
     }
 }
 
-// ----------------------------------------------------------------------------
-// Widget — контракт любого окна/приложения
-// ----------------------------------------------------------------------------
-//
-// Любое GUI-приложение реализует этот трейт. Оконный менеджер держит текущее
-// активное приложение как `&mut dyn Widget` и вызывает эти методы, не зная
-// какое конкретно приложение перед ним. Все методы кроме draw имеют пустую
-// реализацию по умолчанию — приложение переопределяет только то что ему нужно
-// (например, Clock не реагирует на клавиши, а Paint не реагирует на клавиши,
-// но реагирует на drag).
+// contract every app window implements only draw is required the rest default to no-op
 
 pub trait Widget {
-    // нарисовать содержимое окна целиком
-    // менеджер уже нарисовал рамку окна и заголовок — виджет рисует только
-    // своё нутро внутри выданной ему области (см. WindowManager::content_area)
+    // draw window contents manager already drew the frame and title
     fn draw(&mut self);
 
-    // клик левой кнопкой внутри окна (координаты абсолютные, экранные)
-    // вернуть true если нужно перерисовать окно после клика
+    // left click inside the window returns true if a redraw is needed
     fn on_click(&mut self, _x: i32, _y: i32) -> bool {
         false
     }
 
-    // нажата клавиша (только когда окно в фокусе)
-    // вернуть true если нужно перерисовать
+    // key press while focused returns true if a redraw is needed
     fn on_key(&mut self, _key: u8) -> bool {
         false
     }
 
-    // мышь движется с зажатой левой кнопкой (для рисования в Paint)
+    // mouse drag with left button held used by paint
     fn on_drag(&mut self, _x: i32, _y: i32) {}
 
-    // "тик" — вызывается менеджером периодически, для окон которые сами
-    // меняются со временем (например часы). true = перерисовать.
+    // periodic tick for windows that change on their own like the clock
     fn tick(&mut self) -> bool {
         false
     }
 }
 
-// ----------------------------------------------------------------------------
-// Примитивы отрисовки — общие кирпичики для всех окон
-// ----------------------------------------------------------------------------
-//
-// Раньше "нарисуй объёмную кнопку" и "нарисуй панель" копировались в каждом
-// приложении. Собираем в одно место, чтобы стиль был единым и не дублировался.
+// shared drawing primitives for all windows
 
-// цвета оформления в стиле Windows 3.1 (те же что использует desktop.rs)
-pub const WIN_FACE: u32 = 0xC0C0C0;  // серая поверхность
-pub const WIN_LIGHT: u32 = 0xFFFFFF; // светлая грань (верх/лево)
-pub const WIN_DARK: u32 = 0x808080;  // тёмная грань (низ/право)
+// windows 3.1 style colors
+pub const WIN_FACE: u32 = 0xC0C0C0;  // gray surface
+pub const WIN_LIGHT: u32 = 0xFFFFFF; // light bevel edge
+pub const WIN_DARK: u32 = 0x808080;  // dark bevel edge
 pub const BLACK: u32 = 0x000000;
 
-// объёмная грань: светлое сверху-слева, тёмное снизу-справа
-// raised=true — кнопка выпуклая (обычная), false — вдавленная (нажатая)
+// beveled edge raised true for normal false for pressed
 pub fn bevel(x: usize, y: usize, w: usize, h: usize, raised: bool) {
     let (tl, br) = if raised { (WIN_LIGHT, WIN_DARK) } else { (WIN_DARK, WIN_LIGHT) };
-    fill_rect(x, y, w, 2, tl);          // верхняя грань
-    fill_rect(x, y, 2, h, tl);          // левая грань
-    fill_rect(x, y + h - 2, w, 2, br);  // нижняя грань
-    fill_rect(x + w - 2, y, 2, h, br);  // правая грань
+    fill_rect(x, y, w, 2, tl);          // top edge
+    fill_rect(x, y, 2, h, tl);          // left edge
+    fill_rect(x, y + h - 2, w, 2, br);  // bottom edge
+    fill_rect(x + w - 2, y, 2, h, br);  // right edge
 }
 
-// панель — залитый прямоугольник с объёмной рамкой (фон окна/области)
+// panel a filled rect with a beveled border
 pub fn panel(r: Rect) {
     fill_rect(r.x as usize, r.y as usize, r.w as usize, r.h as usize, WIN_FACE);
     bevel(r.x as usize, r.y as usize, r.w as usize, r.h as usize, true);
 }
 
-// кнопка с текстом. рисует объёмный прямоугольник и подпись по центру.
-// сам факт клика проверяется отдельно через Rect::contains — эта функция
-// только рисует.
+// button with centered label click detection is separate via rect contains
 pub fn button(r: Rect, label: &str) {
     fill_rect(r.x as usize, r.y as usize, r.w as usize, r.h as usize, WIN_FACE);
     bevel(r.x as usize, r.y as usize, r.w as usize, r.h as usize, true);
-    // подпись примерно по центру (шрифт 8px на символ)
+    // label roughly centered 8px font
     let tx = r.x as usize + (r.w as usize).saturating_sub(label.len() * 8) / 2;
     let ty = r.y as usize + (r.h as usize).saturating_sub(8) / 2;
     draw_text_at(label, tx, ty, BLACK);
 }
 
-// простая текстовая подпись
+// plain text label
 pub fn label(x: i32, y: i32, text: &str, color: u32) {
     draw_text_at(text, x as usize, y as usize, color);
 }
 
-// рамка без заливки (например для поля ввода)
+// unfilled border for things like input fields
 pub fn outline(r: Rect, color: u32) {
     draw_rect(r.x as usize, r.y as usize, r.w as usize, r.h as usize, color);
 }
 
-// ----------------------------------------------------------------------------
-// Адаптер: Calc как Widget
-// ----------------------------------------------------------------------------
-//
-// Calc уже написан и работает (в widgets/apps.rs). Чтобы не переписывать его
-// прямо сейчас, мы просто "оборачиваем" его существующие методы в контракт
-// Widget. Это показывает главную идею фреймворка: любое приложение с методами
-// "нарисуйся" и "обработай клик" превращается в Widget тривиально.
-//
-// Calc::redraw(&self)          -> Widget::draw
-// Calc::click(&mut, mx, my)    -> Widget::on_click
-// клавиш и drag у калькулятора нет — оставляем поведение по умолчанию (пусто).
-//
-// На шаге Б, когда будем переписывать приложения "начисто", методы Calc можно
-// будет прямо переименовать в draw/on_click и убрать этот адаптер. Пока он —
-// мостик между старым кодом и новым трейтом.
+// calc adapter wraps its existing redraw and click methods as a widget
 
 impl Widget for Calc {
     fn draw(&mut self) {
-        // Calc::redraw берёт &self, а трейт даёт &mut self — это совместимо
+        // redraw takes self by ref which is fine with the trait's mut ref
         self.redraw();
     }
 
     fn on_click(&mut self, x: i32, y: i32) -> bool {
-        // Calc::click уже возвращает "нужно ли перерисовать"
+        // click already returns whether to redraw
         self.click(x, y)
     }
 
-    // on_key / on_drag / tick — у калькулятора не нужны, работает поведение
-    // по умолчанию из трейта (ничего не делает)
+    // key drag and tick unused default no-op behavior applies
 }
 
-// ----------------------------------------------------------------------------
-// Адаптер: Clock как Widget
-// ----------------------------------------------------------------------------
-//
-// Часы сами меняются со временем — поэтому у них есть tick(): менеджер зовёт
-// его периодически, и часы перерисовываются. Кликов и клавиш у часов нет.
+// clock adapter updates itself via tick no clicks or keys
 
 impl Widget for Clock {
     fn draw(&mut self) {
         self.redraw();
     }
 
-    // tick — часы обновляются сами. update() пересчитывает состояние,
-    // возвращаем true чтобы менеджер перерисовал (время идёт).
+    // update recalculates state return true so the manager redraws
     fn tick(&mut self) -> bool {
         self.update();
         true
     }
 }
 
-// ----------------------------------------------------------------------------
-// Адаптер: Paint как Widget
-// ----------------------------------------------------------------------------
-//
-// Рисовалка использует ВСЕ виды ввода: клик (палитра/очистка) и drag (кисть).
-// Paint::on_click возвращает u8 (0=ничего, 1=сменил цвет, 2=очистил) — для
-// трейта нам важно лишь "перерисовывать ли", но Paint сам перерисовывает
-// нужное внутри (draw_toolbar / очистка холста), поэтому возвращаем false,
-// чтобы менеджер не стирал холст лишней полной перерисовкой.
+// paint adapter handles both clicks for the palette and drag for the brush
 
 impl Widget for Paint {
     fn draw(&mut self) {
@@ -218,8 +130,7 @@ impl Widget for Paint {
     }
 
     fn on_click(&mut self, x: i32, y: i32) -> bool {
-        // явный вызов inherent-метода Paint (не трейта!), иначе рекурсия
-        // Paint сам обновляет панель/холст — полная перерисовка не нужна
+        // call paint's own method not the trait to avoid recursion
         let _ = Paint::on_click(self, x, y);
         false
     }
@@ -229,27 +140,9 @@ impl Widget for Paint {
     }
 }
 
-// ----------------------------------------------------------------------------
-// WindowManager — оконный менеджер
-// ----------------------------------------------------------------------------
-//
-// Держит ОДНО активное окно (Option<&mut dyn Widget>) и рисует вокруг него
-// стандартную рамку: заголовок, кнопку закрытия [x]. Приложение (Widget) рисует
-// только СВОЁ содержимое внутри области content_area — про рамку и кнопку [x]
-// оно не знает.
-//
-// Это снимает копипасту: раньше каждое приложение само рисовало рамку и само
-// проверяло клик по [x]. Теперь это делает менеджер один раз для любого окна.
-//
-// ВАЖНО (шаг Б-1): менеджер пока НЕ владеет циклом опроса мыши/клавы целиком —
-// это сделаем когда переведём desktop полностью. Сейчас он предоставляет:
-//   - geometry()      — где находится окно и его content-область
-//   - draw_frame()    — нарисовать рамку+заголовок+[x] вокруг окна
-//   - close_hit()     — попал ли клик по кнопке закрытия
-//   - route_click/key/drag/tick — передать событие активному виджету
-// desktop.rs вызывает их, отдавая нужный &mut dyn Widget.
+// window manager draws the shared frame title and close button around one active window
 
-// геометрия окна на экране
+// on screen window geometry
 #[derive(Clone, Copy)]
 pub struct WindowGeom {
     pub x: usize,
@@ -258,16 +151,16 @@ pub struct WindowGeom {
     pub h: usize,
 }
 
-const TITLE_BG: u32 = 0x000080;  // синий заголовок
-const TITLE_FG: u32 = 0xFFFFFF;  // белый текст
-const TITLE_H: usize = 18;       // высота полосы заголовка
+const TITLE_BG: u32 = 0x000080;  // title bar background
+const TITLE_FG: u32 = 0xFFFFFF;  // title text color
+const TITLE_H: usize = 18;       // title bar height
 
 impl WindowGeom {
     pub fn new(x: usize, y: usize, w: usize, h: usize) -> Self {
         WindowGeom { x, y, w, h }
     }
 
-    // область содержимого — куда виджет рисует своё нутро (под заголовком)
+    // content area below the title where the widget draws
     pub fn content_area(&self) -> Rect {
         Rect::new(
             (self.x + 4) as i32,
@@ -277,33 +170,32 @@ impl WindowGeom {
         )
     }
 
-    // прямоугольник кнопки закрытия [x] в правом верхнем углу
+    // close button rect in the top right corner
     pub fn close_button(&self) -> Rect {
         Rect::new((self.x + self.w - 20) as i32, (self.y + 5) as i32, 14, 14)
     }
 }
 
-// нарисовать рамку окна: тело, объёмная грань, заголовок, кнопка [x]
+// draw window frame body bevel title and close button
 pub fn draw_frame(g: WindowGeom, title: &str) {
     panel(Rect::new(g.x as i32, g.y as i32, g.w as i32, g.h as i32));
-    draw_rect(g.x, g.y, g.w, g.h, BLACK); // чёрный контур
+    draw_rect(g.x, g.y, g.w, g.h, BLACK); // black outline
 
-    // синяя полоса заголовка
+    // blue title bar
     fill_rect(g.x + 3, g.y + 3, g.w - 6, TITLE_H, TITLE_BG);
     draw_text_at(title, g.x + 7, g.y + 3 + 5, TITLE_FG);
 
-    // кнопка закрытия
+    // close button
     let cb = g.close_button();
     button(cb, "x");
 }
 
-// попал ли клик по кнопке закрытия окна
+// check if click hit the close button
 pub fn close_hit(g: WindowGeom, x: i32, y: i32) -> bool {
     g.close_button().contains(x, y)
 }
 
-// передать событие активному виджету (тонкие обёртки — чтобы desktop не знал
-// деталей трейта). Возвращают "нужно ли перерисовать".
+// route events to the active widget return whether to redraw
 pub fn route_click(widget: &mut dyn Widget, x: i32, y: i32) -> bool {
     widget.on_click(x, y)
 }
@@ -324,12 +216,7 @@ pub fn route_draw(widget: &mut dyn Widget) {
     widget.draw();
 }
 
-// ----------------------------------------------------------------------------
-// Адаптер: Terminal как Widget
-// ----------------------------------------------------------------------------
-//
-// Терминал принимает клавиатурный ввод: печатаемые символы копятся в строке
-// ввода, Enter выполняет команду, Backspace стирает. Мыши у него нет.
+// terminal adapter keyboard only typed chars accumulate enter runs the command
 
 use crate::gui::widgets::apps::{Term, Browser};
 use crate::keyboard::{KEY_ENTER, KEY_BACKSPACE};
@@ -342,7 +229,7 @@ impl Widget for Term {
     fn on_key(&mut self, key: u8) -> bool {
         match key {
             KEY_ENTER => {
-                // выполнить набранную команду и очистить ввод
+                // run the typed command and clear input
                 let inp = self.input.clone();
                 self.input.clear();
                 self.exec(&inp);
@@ -361,12 +248,7 @@ impl Widget for Term {
     }
 }
 
-// ----------------------------------------------------------------------------
-// Адаптер: Browser (Not-Google) как Widget
-// ----------------------------------------------------------------------------
-//
-// Браузер принимает и клавиши (ввод запроса), и клик (кнопка Search). Enter в
-// строке запроса тоже запускает поиск.
+// browser adapter takes keys for the query and a click on search enter also searches
 
 impl Widget for Browser {
     fn draw(&mut self) {
@@ -374,7 +256,7 @@ impl Widget for Browser {
     }
 
     fn on_click(&mut self, x: i32, y: i32) -> bool {
-        // клик по кнопке Search запускает поиск
+        // clicking search runs the search
         if self.search_btn_hit(x, y) {
             self.do_search();
             true
@@ -402,34 +284,16 @@ impl Widget for Browser {
     }
 }
 
-// ============================================================================
-// Виджеты-кирпичи — переиспользуемые компоненты UI
-// ============================================================================
-//
-// Выше в этом файле есть функции panel()/button()/label() — они просто РИСУЮТ
-// и ничего не помнят. Кирпичи ниже — это СТРУКТУРЫ: каждая хранит свою область
-// и содержимое, умеет нарисовать себя и сказать "по мне ли кликнули". Из таких
-// кирпичей приложение собирается как из деталей, а не рисуется пикселями с нуля.
-//
-// Паттерн использования (пример — кнопка):
-//   let ok = Button::new("OK", Rect::new(10, 10, 60, 24));  // создать
-//   ok.draw();                                              // нарисовать
-//   if ok.hit(mx, my) { ... }                               // проверить клик
-//
-// Это база. Дальше их можно наращивать (иконки на кнопках, состояния hover/
-// pressed, и т.д.), но сейчас — минимальный полезный набор: Button, Label,
-// TextField.
+// reusable ui widget structs each stores its own area and content
 
-// цвета текста по умолчанию
+// default text colors
 const TEXT_DARK: u32 = 0x000000;
 
-// ----------------------------------------------------------------------------
-// Button — кликабельная кнопка с подписью
-// ----------------------------------------------------------------------------
+// button clickable with a label
 
 pub struct Button {
-    pub area: Rect,          // где кнопка находится
-    pub text: &'static str,  // подпись
+    pub area: Rect,          // where the button sits
+    pub text: &'static str,  // label
 }
 
 impl Button {
@@ -437,20 +301,18 @@ impl Button {
         Button { text, area }
     }
 
-    // нарисовать кнопку (объёмная грань + подпись по центру)
+    // draw beveled button with centered label
     pub fn draw(&self) {
         button(self.area, self.text);
     }
 
-    // кликнули ли по этой кнопке
+    // whether this button was clicked
     pub fn hit(&self, mx: i32, my: i32) -> bool {
         self.area.contains(mx, my)
     }
 }
 
-// ----------------------------------------------------------------------------
-// Label — просто текст в позиции
-// ----------------------------------------------------------------------------
+// label plain text at a position
 
 pub struct Label {
     pub x: i32,
@@ -469,23 +331,13 @@ impl Label {
     }
 }
 
-// ----------------------------------------------------------------------------
-// TextField — однострочное поле ввода со своим состоянием
-// ----------------------------------------------------------------------------
-//
-// Хранит введённый текст сам. Приложение отдаёт ему нажатую клавишу через
-// key(), а поле само разбирается: печатный символ — добавить, Backspace —
-// стереть. draw() рисует рамку, текст и курсор-палочку.
-//
-// Готово к использованию в НОВЫХ приложениях. Существующие Terminal/Browser
-// пока держат ввод по-своему (работают) — переводить их на TextField не нужно,
-// это отдельная задача на потом.
+// textfield single line input owns its own text state
 
 pub struct TextField {
     pub area: Rect,
     pub text: alloc::string::String,
     pub max_len: usize,
-    pub focused: bool, // рисовать ли курсор
+    pub focused: bool, // whether to draw the cursor
 }
 
 impl TextField {
@@ -498,11 +350,11 @@ impl TextField {
         }
     }
 
-    // обработать нажатие клавиши; вернуть true если содержимое изменилось
+    // handle a keypress return true if content changed
     pub fn key(&mut self, key: u8) -> bool {
         match key {
             0x08 => {
-                // Backspace
+                // backspace
                 self.text.pop();
                 true
             }
@@ -518,23 +370,23 @@ impl TextField {
         }
     }
 
-    // нарисовать поле: фон, рамка, текст, курсор
+    // draw background border text and cursor
     pub fn draw(&self) {
         let x = self.area.x as usize;
         let y = self.area.y as usize;
         let w = self.area.w as usize;
         let h = self.area.h as usize;
-        fill_rect(x, y, w, h, 0xFFFFFF);      // белый фон
-        outline(self.area, WIN_DARK);         // серая рамка
+        fill_rect(x, y, w, h, 0xFFFFFF);      // white background
+        outline(self.area, WIN_DARK);         // gray border
         draw_text_at(&self.text, x + 4, y + (h.saturating_sub(8)) / 2, TEXT_DARK);
-        // курсор — вертикальная палочка после текста
+        // cursor a vertical bar after the text
         if self.focused {
             let cx = x + 4 + self.text.len() * 8;
             fill_rect(cx, y + 4, 2, h.saturating_sub(8), TEXT_DARK);
         }
     }
 
-    // попал ли клик в поле (чтобы поставить фокус)
+    // whether click landed in the field to give it focus
     pub fn hit(&self, mx: i32, my: i32) -> bool {
         self.area.contains(mx, my)
     }

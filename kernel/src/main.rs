@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-// подсистемы по папкам
+// subsystems by folder
 mod kcore;
 mod mem;
 mod drivers;
@@ -12,15 +12,14 @@ mod gui;
 mod apps;
 mod shell;
 
-// плоские алиасы в корень крейта — чтобы существующие crate::<модуль> пути работали
+// flat aliases at crate root so old crate module paths keep working
 pub use kcore::{random, time, banner, login};
 pub use mem::allocator;
 pub use drivers::{port, keyboard, mouse, ata, sound};
 pub use drivers::net as tcp;              // crate::tcp::pci / net / rtl8139 / device
 pub use gui::{framebuffer, html};
 pub use apps::{editor, monitor, piano, script, wasm};
-// GUI-приложения (Clock/Calc/Paint) — gui.rs зовёт crate::apps::{...}
-// но crate::apps занят консольными. gui.rs правим на crate::gui::widgets::apps
+// gui apps like clock calc paint live at crate::gui::widgets::apps
 
 use ::core::arch::asm;
 use limine::BaseRevision;

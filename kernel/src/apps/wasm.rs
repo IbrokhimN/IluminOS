@@ -4,7 +4,7 @@ use crate::framebuffer::{GREEN, RED, YELLOW};
 
 static DEMO_WASM: &[u8] = include_bytes!("demo.wasm");
 
-// вызвать функцию модуля с одним аргументом i32 -> i32
+// call module function with one i32 arg
 fn call_i32_i32(func_name: &str, arg: i32) -> Result<i32, &'static str> {
     let engine = Engine::default();
     let module = Module::new(&engine, DEMO_WASM).map_err(|_| "parse error")?;
@@ -23,7 +23,7 @@ fn call_i32_i32(func_name: &str, arg: i32) -> Result<i32, &'static str> {
     func.call(&mut store, arg).map_err(|_| "call trap")
 }
 
-// вызвать add(a, b)
+// call add function
 fn call_add(a: i32, b: i32) -> Result<i32, &'static str> {
     let engine = Engine::default();
     let module = Module::new(&engine, DEMO_WASM).map_err(|_| "parse error")?;

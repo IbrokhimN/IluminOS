@@ -1,29 +1,29 @@
-// прерывания IDT + IRQ фундамент для сети
+// idt and irq foundation for networking
 
 use core::arch::asm;
 use crate::port::{inb, outb};
 
-// порты контроллеров прерываний PIC master и slave
+// pic master and slave controller ports
 const PIC1_CMD: u16 = 0x20;
 const PIC1_DATA: u16 = 0x21;
 const PIC2_CMD: u16 = 0xA0;
 const PIC2_DATA: u16 = 0xA1;
-const PIC_EOI: u8 = 0x20; // End Of Interrupt сигнал я обработал
+const PIC_EOI: u8 = 0x20; // end of interrupt signal
 
-// после ремапа аппаратные IRQ занимают 0x20..0x2F в IDT
+// after remap hardware irqs sit at 0x20 to 0x2f in idt
 const IRQ_BASE: u8 = 0x20;
 
-// запись IDT одна строка таблицы формат задан x86-64
-#[repr(C, packed)] // без выравнивания байты как ждёт железо
+// one idt entry format defined by x86-64
+#[repr(C, packed)] // no padding bytes match hardware layout
 #[derive(Clone, Copy)]
 struct IdtEntry {
-    offset_low: u16,   // младшие биты адреса обработчика
-    selector: u16,     // сегмент кода
-    ist: u8,           // Interrupt Stack Table 0 обычный стек
-    type_attr: u8,     // тип записи 0x8E interrupt gate present
-    offset_mid: u16,   // средние биты адреса
-    offset_high: u32,  // старшие биты адреса
-    zero: u32,         // зарезервировано всегда 0
+    offset_low: u16,   // low bits of handler address
+    selector: u16,     // code segment
+    ist: u8,           // interrupt stack table 0 means normal stack
+    type_attr: u8,     // entry type 0x8e interrupt gate present
+    offset_mid: u16,   // mid bits of address
+    offset_high: u32,  // high bits of address
+    zero: u32,         // reserved always 0
 }
 
 impl IdtEntry {
@@ -32,88 +32,88 @@ impl IdtEntry {
                    offset_mid:0, offset_high:0, zero:0 }
     }
 
-    // записать адрес обработчика в запись IDT
+    // write handler address into idt entry
     fn set_handler(&mut self, handler: u64, selector: u16) {
         self.offset_low  = (handler & 0xFFFF) as u16;
         self.offset_mid  = ((handler >> 16) & 0xFFFF) as u16;
         self.offset_high = ((handler >> 32) & 0xFFFFFFFF) as u32;
         self.selector = selector;
         self.ist = 0;
-        self.type_attr = 0x8E; // present + interrupt gate
+        self.type_attr = 0x8E; // present interrupt gate
         self.zero = 0;
     }
 }
 
-// таблица на 256 записей
+// table of 256 entries
 static mut IDT: [IdtEntry; 256] = [IdtEntry::empty(); 256];
 
-// указатель на IDT для инструкции lidt
+// pointer to idt for lidt instruction
 #[repr(C, packed)]
 struct IdtPointer {
-    limit: u16, // размер таблицы минус 1
-    base: u64,  // адрес таблицы
+    limit: u16, // table size minus 1
+    base: u64,  // table address
 }
 
-// переназначить IRQ с системных номеров на 0x20+
+// remap irqs from bios numbers to 0x20 plus
 fn remap_pic() {
     unsafe {
-        // сохранить текущие маски
+        // save current masks
         let mask1 = inb(PIC1_DATA);
         let mask2 = inb(PIC2_DATA);
 
-        // начать инициализацию обоих PIC ICW1
+        // start init of both pics icw1
         outb(PIC1_CMD, 0x11);
         outb(PIC2_CMD, 0x11);
-        // ICW2 новый базовый номер master 0x20 slave 0x28
+        // icw2 new base offset master 0x20 slave 0x28
         outb(PIC1_DATA, IRQ_BASE);
         outb(PIC2_DATA, IRQ_BASE + 8);
-        // ICW3 связь master и slave
+        // icw3 master slave wiring
         outb(PIC1_DATA, 4);
         outb(PIC2_DATA, 2);
-        // ICW4 режим 8086
+        // icw4 8086 mode
         outb(PIC1_DATA, 0x01);
         outb(PIC2_DATA, 0x01);
 
-        // вернуть маски
+        // restore masks
         outb(PIC1_DATA, mask1);
         outb(PIC2_DATA, mask2);
     }
 }
 
-// разрешить конкретный IRQ
+// unmask a specific irq
 pub fn unmask_irq(irq: u8) {
     unsafe {
         if irq < 8 {
-            // master PIC
+            // master pic
             let mask = inb(PIC1_DATA);
-            outb(PIC1_DATA, mask & !(1 << irq)); // сбросить бит разрешить
+            outb(PIC1_DATA, mask & !(1 << irq)); // clear bit to enable
         } else {
-            // slave PIC
+            // slave pic
             let mask = inb(PIC2_DATA);
             outb(PIC2_DATA, mask & !(1 << (irq - 8)));
         }
     }
 }
 
-// сказать PIC я обработал обязательно в конце обработчика
+// tell pic we handled it call at end of handler
 pub fn send_eoi(irq: u8) {
     unsafe {
         if irq >= 8 {
-            outb(PIC2_CMD, PIC_EOI); // slave тоже уведомить
+            outb(PIC2_CMD, PIC_EOI); // notify slave too
         }
         outb(PIC1_CMD, PIC_EOI);
     }
 }
 
-// обработчик прерывания от сетевой карты
+// interrupt handler for the network card
 extern "x86-interrupt" fn net_interrupt_handler(_frame: InterruptStackFrame) {
-    // сказать драйверу разобрать событие карты
+    // let driver handle the card event
     crate::tcp::rtl8139::handle_interrupt();
-    // уведомить PIC что закончили
+    // notify pic we are done
     send_eoi(11);
 }
 
-// заглушка типа кадра прерывания его кладёт процессор на стек
+// interrupt stack frame layout pushed by cpu
 #[repr(C)]
 pub struct InterruptStackFrame {
     pub rip: u64,
@@ -123,27 +123,27 @@ pub struct InterruptStackFrame {
     pub ss: u64,
 }
 
-// настроить прерывания вызвать при загрузке после framebuffer до сети
+// setup interrupts call at boot after framebuffer before net
 pub fn init(net_irq: u8, code_selector: u16) {
     unsafe {
-        // поставить обработчик карты в IDT по её номеру
+        // install card handler into idt by its index
         let idt_index = (IRQ_BASE + net_irq) as usize;
         let handler_addr = net_interrupt_handler as u64;
         let idt_ptr = core::ptr::addr_of_mut!(IDT);
         (*idt_ptr)[idt_index].set_handler(handler_addr, code_selector);
 
-        // ремапнуть PIC
+        // remap pic
         remap_pic();
 
-        // загрузить IDT инструкцией lidt
+        // load idt with lidt instruction
         let descriptor = IdtPointer {
             limit: (core::mem::size_of::<[IdtEntry; 256]>() - 1) as u16,
             base: idt_ptr as u64,
         };
         asm!("lidt [{}]", in(reg) &descriptor, options(readonly, nostack, preserves_flags));
 
-        // разрешить IRQ карты и включить прерывания глобально
+        // unmask card irq and enable interrupts globally
         unmask_irq(net_irq);
-        asm!("sti", options(nomem, nostack)); // слушаю прерывания
+        asm!("sti", options(nomem, nostack)); // start listening for interrupts
     }
 }

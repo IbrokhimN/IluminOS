@@ -1,6 +1,4 @@
-// физический frame-аллокатор поверх настоящей memory map от limine
-// вместо старого статического куска в 1 МБ теперь берём реальные
-// свободные страницы у бутлоадера и сами их размечаем битмапом
+// physical frame allocator built on limine memory map
 
 use core::slice;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -12,9 +10,9 @@ use spin::Mutex;
 
 const FRAME_SIZE: u64 = 4096;
 
-// нижняя и верхняя граница того, сколько мы хотим отдать под кучу ядра
-const HEAP_MIN: usize = 1024 * 1024;        // не хуже старого поведения
-const HEAP_MAX: usize = 64 * 1024 * 1024;   // не жаднее 64 МБ
+// lower and upper bound for kernel heap size
+const HEAP_MIN: usize = 1024 * 1024;
+const HEAP_MAX: usize = 64 * 1024 * 1024;
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -27,18 +25,16 @@ static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-// аварийный резерв на случай если бутлоадер вдруг не отдал memory map —
-// старое поведение остаётся как fallback, чтобы система в любом случае поднялась
+// emergency fallback heap if bootloader gives no memory map
 const EMERGENCY_HEAP_SIZE: usize = 1024 * 1024;
 #[repr(align(16))]
 struct EmergencyHeap([u8; EMERGENCY_HEAP_SIZE]);
 static mut EMERGENCY_HEAP: EmergencyHeap = EmergencyHeap([0; EMERGENCY_HEAP_SIZE]);
 
-// сколько реально байт отдано под кучу (для df/mem), считается в рантайме
+// actual heap byte count computed at runtime
 static HEAP_SIZE: AtomicUsize = AtomicUsize::new(0);
 
-// битовая карта физических страниц: 1 бит = один фрейм 4 КБ
-// 0 = свободен, 1 = занят/недоступен
+// physical page bitmap one bit per 4kb frame 0 free 1 used
 struct FrameBitmap {
     bits: &'static mut [u8],
     hhdm_offset: u64,
@@ -73,7 +69,7 @@ impl FrameBitmap {
         }
     }
 
-    // ищет первую подряд идущую последовательность из `count` свободных фреймов
+    // find first run of count free frames
     fn find_free_run(&self, count: usize) -> Option<usize> {
         let total = self.frame_count();
         let mut run_start = 0usize;
@@ -94,7 +90,7 @@ impl FrameBitmap {
         None
     }
 
-    // выделить один физический фрейм, вернуть его физический адрес
+    // allocate one physical frame return its address
     #[allow(dead_code)]
     fn alloc_frame(&mut self) -> Option<u64> {
         let frame = self.find_free_run(1)?;
@@ -102,7 +98,7 @@ impl FrameBitmap {
         Some(frame as u64 * FRAME_SIZE)
     }
 
-    // освободить физический фрейм по его физическому адресу
+    // free a physical frame by its address
     #[allow(dead_code)]
     fn free_frame(&mut self, addr: u64) {
         let frame = (addr / FRAME_SIZE) as usize;
@@ -118,7 +114,7 @@ impl FrameBitmap {
 
 static FRAME_ALLOCATOR: Mutex<Option<FrameBitmap>> = Mutex::new(None);
 
-// сколько всего физических фреймов размечено битмапом (для команды df/mem)
+// total frames tracked by the bitmap
 #[allow(dead_code)]
 pub fn frame_count() -> usize {
     FRAME_ALLOCATOR
@@ -128,7 +124,7 @@ pub fn frame_count() -> usize {
         .unwrap_or(0)
 }
 
-// выделить один физический фрейм напрямую (для будущих драйверов/пейджинга)
+// allocate one physical frame directly for future drivers or paging
 #[allow(dead_code)]
 pub fn alloc_frame() -> Option<u64> {
     FRAME_ALLOCATOR.lock().as_mut()?.alloc_frame()
@@ -146,8 +142,7 @@ pub fn init() {
         return;
     }
 
-    // fallback: memory map недоступна (старый бутлоадер / не тот протокол) —
-    // поднимаемся на прежнем статическом куске, чтобы не падать в панику
+    // fallback memory map unavailable use static emergency heap
     unsafe {
         let start = &raw const EMERGENCY_HEAP as usize;
         ALLOCATOR.lock().init(start as *mut u8, EMERGENCY_HEAP_SIZE);
@@ -166,7 +161,7 @@ fn try_init_from_memory_map() -> bool {
     let entries = mmap.entries();
     let hhdm_offset = hhdm.offset();
 
-    // верхняя граница физического адреса — по ней считаем размер битмапа
+    // highest physical address used to size the bitmap
     let highest_addr = entries
         .iter()
         .map(|e| e.base + e.length)
@@ -180,7 +175,7 @@ fn try_init_from_memory_map() -> bool {
     let bitmap_bytes = total_frames.div_ceil(8);
     let bitmap_frames_needed = (bitmap_bytes as u64).div_ceil(FRAME_SIZE);
 
-    // ищем usable-регион, в который битмап поместится целиком
+    // find a usable region big enough to hold the bitmap
     let bitmap_region = entries.iter().find(|e| {
         e.entry_type == EntryType::USABLE && e.length >= bitmap_frames_needed * FRAME_SIZE
     });
@@ -193,7 +188,7 @@ fn try_init_from_memory_map() -> bool {
     let bits: &'static mut [u8] =
         unsafe { slice::from_raw_parts_mut(bitmap_ptr, bitmap_bytes) };
 
-    // по умолчанию всё занято/недоступно, потом открываем usable-куски
+    // default everything to used then open up usable regions
     bits.fill(0xFF);
 
     let mut fb = FrameBitmap { bits, hhdm_offset };
@@ -207,12 +202,11 @@ fn try_init_from_memory_map() -> bool {
         fb.mark_range_free(start_frame, frame_len);
     }
 
-    // и сразу же снова резервируем место, которое сами заняли под битмап
+    // reserve the space we used for the bitmap itself
     let bitmap_start_frame = (bitmap_phys_base / FRAME_SIZE) as usize;
     fb.mark_range_used(bitmap_start_frame, bitmap_frames_needed as usize);
 
-    // считаем сколько всего свободной памяти реально есть, чтобы выбрать
-    // разумный размер кучи вместо жёстко зашитого 1 МБ
+    // count total free memory to pick a sensible heap size
     let usable_bytes: u64 = entries
         .iter()
         .filter(|e| e.entry_type == EntryType::USABLE)
@@ -221,8 +215,7 @@ fn try_init_from_memory_map() -> bool {
 
     let desired = ((usable_bytes / 4) as usize).clamp(HEAP_MIN, HEAP_MAX);
 
-    // пробуем найти сплошной свободный кусок под кучу, если не находится —
-    // уменьшаем аппетиты, пока не найдём хоть что-то рабочее
+    // try to find a contiguous free chunk shrink if not found
     let mut heap_bytes = desired;
     let heap_start_frame = loop {
         let frames_needed = (heap_bytes as u64).div_ceil(FRAME_SIZE) as usize;
@@ -253,12 +246,12 @@ fn try_init_from_memory_map() -> bool {
     true
 }
 
-// сколько всего байт в куче (для команды df/mem)
+// total heap bytes
 pub fn heap_size() -> usize {
     HEAP_SIZE.load(Ordering::Relaxed)
 }
 
-// сколько занято/свободно прямо сейчас
+// currently used bytes
 pub fn heap_used() -> usize {
     ALLOCATOR.lock().used()
 }

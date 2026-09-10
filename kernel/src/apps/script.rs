@@ -4,16 +4,16 @@ use crate::fs::{self, FILE_MAX_BYTES};
 use crate::print_color;
 use crate::framebuffer::{GREEN, RED, YELLOW, CYAN};
 
-// одна переменная: имя и значение
+// one variable name and value
 struct Var {
     name: String,
     value: i64,
 }
 
-// состояние интерпретатора: список переменных и флаг ошибки
+// interpreter state variable list and error flag
 struct Interp {
     vars: Vec<Var>,
-    error: Option<&'static str>, // если что-то сломалось — тут текст ошибки
+    error: Option<&'static str>, // error text if something broke
 }
 
 impl Interp {
@@ -21,7 +21,7 @@ impl Interp {
         Interp { vars: Vec::new(), error: None }
     }
 
-    // найти значение переменной по имени
+    // find variable value by name
     fn get_var(&self, name: &str) -> Option<i64> {
         for v in &self.vars {
             if v.name == name {
@@ -31,43 +31,43 @@ impl Interp {
         None
     }
 
-    // задать переменную (обновить существующую или добавить новую)
+    // set a variable update existing or add new
     fn set_var(&mut self, name: &str, value: i64) {
         for v in &mut self.vars {
             if v.name == name {
-                v.value = value; // уже есть — обновляем
+                v.value = value; // already exists update it
                 return;
             }
         }
-        self.vars.push(Var { name: String::from(name), value }); // нет — добавляем
+        self.vars.push(Var { name: String::from(name), value }); // not found add it
     }
 
-    // выполнить одну строку скрипта
+    // run one script line
     fn exec_line(&mut self, line: &str) {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
-            return; // пусто или комментарий — пропускаем
+            return; // empty or comment skip it
         }
 
-        // строка вида "let x = ..."
+        // line of the form let x equals
         if let Some(rest) = line.strip_prefix("let ") {
             if let Some(eq) = rest.find('=') {
-                let name = rest[..eq].trim();       // до "=" — имя
-                let expr = rest[eq + 1..].trim();   // после "=" — выражение
+                let name = rest[..eq].trim();       // before equals is the name
+                let expr = rest[eq + 1..].trim();   // after equals is the expression
                 if !is_valid_name(name) {
                     self.error = Some("invalid variable name");
                     return;
                 }
-                let val = self.eval(expr);          // вычисляем правую часть
+                let val = self.eval(expr);          // evaluate right hand side
                 if self.error.is_some() {
                     return;
                 }
-                self.set_var(name, val);            // сохраняем в переменную
+                self.set_var(name, val);            // store into variable
             } else {
                 self.error = Some("let without =");
             }
         }
-        // строка вида "print ..."
+        // line of the form print
         else if let Some(expr) = line.strip_prefix("print ") {
             let val = self.eval(expr.trim());
             if self.error.is_some() {
@@ -79,27 +79,25 @@ impl Interp {
         }
     }
 
-    // вычислить выражение (точка входа парсера)
+    // evaluate expression parser entry point
     fn eval(&mut self, expr: &str) -> i64 {
-        let tokens = tokenize(expr); // шаг 1: строка -> токены
+        let tokens = tokenize(expr); // step 1 string to tokens
         if tokens.is_empty() {
             self.error = Some("empty expression");
             return 0;
         }
-        let mut pos = 0; // текущая позиция в списке токенов (общий "курсор")
-        let result = self.parse_add_sub(&tokens, &mut pos); // шаг 2: парсим
-        // если после разбора остались лишние токены — что-то не так
+        let mut pos = 0; // current position in token list
+        let result = self.parse_add_sub(&tokens, &mut pos); // step 2 parse
+        // leftover tokens after parsing means something is wrong
         if pos != tokens.len() && self.error.is_none() {
             self.error = Some("unexpected tokens");
         }
         result
     }
 
-    // уровень сложения/вычитания (НИЗШИЙ приоритет)
-    // Сначала берёт левый операнд через уровень выше (mul_div), потом, пока
-    // видит + или -, добавляет/вычитает следующие операнды
+    // addition subtraction level lowest precedence
     fn parse_add_sub(&mut self, tokens: &[Token], pos: &mut usize) -> i64 {
-        let mut left = self.parse_mul_div(tokens, pos); // левая часть (уже с учётом * /)
+        let mut left = self.parse_mul_div(tokens, pos); // left side already handles mul div
         while *pos < tokens.len() {
             match &tokens[*pos] {
                 Token::Plus => {
@@ -110,14 +108,13 @@ impl Interp {
                     *pos += 1;
                     left -= self.parse_mul_div(tokens, pos);
                 }
-                _ => break, // не + и не - — этот уровень закончился
+                _ => break, // not plus or minus this level is done
             }
         }
         left
     }
 
-    // уровень умножения/деления (ВЫШЕ приоритетом)
-    // Аналогично, но операнды берёт из parse_atom (число/скобка)
+    // multiplication division level higher precedence
     fn parse_mul_div(&mut self, tokens: &[Token], pos: &mut usize) -> i64 {
         let mut left = self.parse_atom(tokens, pos);
         while *pos < tokens.len() {
@@ -141,8 +138,7 @@ impl Interp {
         left
     }
 
-    // самый нижний уровень: одно "значение"
-    // Это число, переменная, выражение в скобках или унарный минус
+    // lowest level a single value number variable parens or unary minus
     fn parse_atom(&mut self, tokens: &[Token], pos: &mut usize) -> i64 {
         if *pos >= tokens.len() {
             self.error = Some("expected value");
@@ -151,11 +147,11 @@ impl Interp {
         match &tokens[*pos] {
             Token::Num(n) => {
                 *pos += 1;
-                *n // просто число
+                *n // plain number
             }
             Token::Ident(name) => {
                 *pos += 1;
-                match self.get_var(name) { // значение переменной
+                match self.get_var(name) { // variable value
                     Some(v) => v,
                     None => {
                         self.error = Some("undefined variable");
@@ -165,9 +161,9 @@ impl Interp {
             }
             Token::LParen => {
                 *pos += 1;
-                // Внутри скобок — снова полное выражение (рекурсия на верхний уровень)
+                // inside parens is a full expression recurse to top level
                 let val = self.parse_add_sub(tokens, pos);
-                // ждём закрывающую скобку
+                // expect closing paren
                 if *pos < tokens.len() && matches!(tokens[*pos], Token::RParen) {
                     *pos += 1;
                 } else {
@@ -176,7 +172,7 @@ impl Interp {
                 val
             }
             Token::Minus => {
-                // унарный минус: -5, -(2+3)
+                // unary minus
                 *pos += 1;
                 -self.parse_atom(tokens, pos)
             }
@@ -188,20 +184,20 @@ impl Interp {
     }
 }
 
-// "кусочек" выражения. enum перечисляет все возможные виды токенов
+// a piece of an expression enum lists all token kinds
 #[derive(Clone)]
 enum Token {
-    Num(i64),      // число
-    Ident(String), // имя переменной
-    Plus,          // +
-    Minus,         // -
-    Star,          // *
-    Slash,         // /
-    LParen,        // (
-    RParen,        // )
+    Num(i64),      // number
+    Ident(String), // variable name
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    LParen,
+    RParen,
 }
 
-// превратить строку в список токенов (шаг 1 парсинга)
+// turn a string into a token list step 1 of parsing
 fn tokenize(s: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let bytes = s.as_bytes();
@@ -209,7 +205,7 @@ fn tokenize(s: &str) -> Vec<Token> {
     while i < bytes.len() {
         let c = bytes[i];
         match c {
-            b' ' | b'\t' => i += 1, // пробелы пропускаем
+            b' ' | b'\t' => i += 1, // skip whitespace
             b'+' => { tokens.push(Token::Plus); i += 1; }
             b'-' => { tokens.push(Token::Minus); i += 1; }
             b'*' => { tokens.push(Token::Star); i += 1; }
@@ -217,16 +213,16 @@ fn tokenize(s: &str) -> Vec<Token> {
             b'(' => { tokens.push(Token::LParen); i += 1; }
             b')' => { tokens.push(Token::RParen); i += 1; }
             b'0'..=b'9' => {
-                // читаем число целиком (несколько цифр подряд)
+                // read the whole number several digits
                 let mut n: i64 = 0;
                 while i < bytes.len() && bytes[i] >= b'0' && bytes[i] <= b'9' {
-                    n = n * 10 + (bytes[i] - b'0') as i64; // накапливаем число
+                    n = n * 10 + (bytes[i] - b'0') as i64; // accumulate number
                     i += 1;
                 }
                 tokens.push(Token::Num(n));
             }
             _ if is_ident_start(c) => {
-                // читаем имя переменной целиком
+                // read the whole variable name
                 let start = i;
                 while i < bytes.len() && is_ident_char(bytes[i]) {
                     i += 1;
@@ -235,29 +231,28 @@ fn tokenize(s: &str) -> Vec<Token> {
                     tokens.push(Token::Ident(String::from(name)));
                 }
             }
-            _ => i += 1, // неизвестный символ — пропускаем
+            _ => i += 1, // unknown char skip it
         }
     }
     tokens
 }
 
 fn is_ident_start(c: u8) -> bool {
-    // имя начинается с буквы или _
+    // name starts with a letter or underscore
     (c >= b'a' && c <= b'z') || (c >= b'A' && c <= b'Z') || c == b'_'
 }
 
 fn is_ident_char(c: u8) -> bool {
-    // внутри имени можно ещё и цифры
+    // name can also contain digits
     is_ident_start(c) || (c >= b'0' && c <= b'9')
 }
 
 fn is_valid_name(name: &str) -> bool {
-    // непустое, все символы допустимы, первый — не цифра
+    // non empty all chars valid first not a digit
     !name.is_empty() && name.bytes().all(|c| is_ident_char(c)) && is_ident_start(name.as_bytes()[0])
 }
 
-// вычислить ОДНО выражение (для команды calc в shell)
-// Переиспользует тот же парсер, но без переменных
+// evaluate one expression for the shell calc command no variables
 pub fn eval_expr(expr: &str) -> Result<i64, &'static str> {
     let mut interp = Interp::new();
     let val = interp.eval(expr);
@@ -267,16 +262,16 @@ pub fn eval_expr(expr: &str) -> Result<i64, &'static str> {
     }
 }
 
-// выполнить скрипт из файла (команда run)
+// run a script file command run
 pub fn run_file(name: &str) {
-    // читаем файл
+    // read the file
     let mut buf = [0u8; FILE_MAX_BYTES];
     let size = match fs::read(name, &mut buf) {
         Ok(s) => s,
         Err(e) => { print_color!(RED, "error: {}\n", e); return; }
     };
 
-    // проверяем, что это текст
+    // check that it is text
     let text = match core::str::from_utf8(&buf[..size]) {
         Ok(t) => t,
         Err(_) => { print_color!(RED, "error: not a text file\n"); return; }
@@ -285,7 +280,7 @@ pub fn run_file(name: &str) {
     print_color!(YELLOW, "running {}...\n", name);
     let mut interp = Interp::new();
     let mut line_num = 0;
-    // выполняем построчно; при ошибке — сообщаем номер строки и стоп
+    // run line by line report line number and stop on error
     for line in text.split('\n') {
         line_num += 1;
         interp.exec_line(line);
