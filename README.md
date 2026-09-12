@@ -30,7 +30,8 @@ https://github.com/user-attachments/assets/54edbe24-f3ee-44f6-a634-697f1c2de1c1
 
 ## Quick Start
 ``` bash
-chmod +x install.sh
+chmod +x limine/limine
+chmod +x install.sh 
 ./install.sh
 ```
 Build and run (with disk and network card):
@@ -45,8 +46,8 @@ make run QEMUFLAGS="-m 2G \
 Or use the script:
 
 ```bash
+chmod +x run.fish
 ./run.fish
-
 ```
 
 The `-device rtl8139` flag is required for `lspci`, `nic`, and `ping`. Without it, the system works, but networking is unavailable.
