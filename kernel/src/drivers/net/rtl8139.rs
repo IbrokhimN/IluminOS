@@ -1,6 +1,6 @@
 // rtl8139 nic driver polling version no interrupts
 
-use crate::port::{inb, inw, outb, outw, outl};
+use crate::port::{inb, inl, inw, outb, outw, outl};
 use crate::tcp::pci::{self, PciDevice};
 use spin::Mutex;
 
@@ -22,18 +22,42 @@ const CMD_RX_ENABLE: u8 = 0x08;
 const CMD_TX_ENABLE: u8 = 0x04;
 const ISR_ROK: u16 = 0x01;
 const ISR_TOK: u16 = 0x04;
+const TSD_OWN: u32 = 1 << 13; // set once the card finished reading our buffer
+const TSD_TOK: u32 = 1 << 15; // set once the frame actually left onto the wire
 
 const RX_BUF_SIZE: usize = 8192 + 16 + 1500;
+const TX_BUF_SIZE: usize = 1792;
+const PAGE_SIZE: usize = 4096;
+
+// a dma buffer paired with the physical address the card must be told
+struct DmaBuf {
+    virt: &'static mut [u8],
+    phys: u32,
+}
 
 struct Rtl8139 {
     io_base: u16,
-    rx_buffer: [u8; RX_BUF_SIZE],
+    rx_buffer: DmaBuf,
     rx_offset: usize,
+    tx_buf: [DmaBuf; 4], // persistent buffers so dma never reads freed stack memory
     tx_cur: usize,
     mac: [u8; 6],
 }
 
 static DRIVER: Mutex<Option<Rtl8139>> = Mutex::new(None);
+
+// allocate count bytes of real physical memory the card can dma into or out of
+// gives back both a physical address for the hardware and a cpu pointer via hhdm
+fn alloc_dma_buf(bytes: usize) -> Option<DmaBuf> {
+    let frames = bytes.div_ceil(PAGE_SIZE);
+    let phys = crate::allocator::alloc_frames(frames)?;
+    let ptr = crate::allocator::phys_to_virt(phys)?;
+    let virt: &'static mut [u8] = unsafe {
+        core::slice::from_raw_parts_mut(ptr, frames * PAGE_SIZE)
+    };
+    virt.fill(0);
+    Some(DmaBuf { virt, phys: phys as u32 })
+}
 
 // find card via pci and configure it returns false if absent
 pub fn init() -> bool {
@@ -48,10 +72,21 @@ pub fn init() -> bool {
     // bar0 to base io port mask flag bits
     let io_base = (dev.bar0 & 0xFFFC) as u16;
 
+    // dma buffers need a real physical address the card can be told about
+    // a plain kernel pointer here would be a virtual address and garbage to the card
+    let rx_dma = match alloc_dma_buf(RX_BUF_SIZE) { Some(b) => b, None => return false };
+    let tx_dma = [
+        match alloc_dma_buf(TX_BUF_SIZE) { Some(b) => b, None => return false },
+        match alloc_dma_buf(TX_BUF_SIZE) { Some(b) => b, None => return false },
+        match alloc_dma_buf(TX_BUF_SIZE) { Some(b) => b, None => return false },
+        match alloc_dma_buf(TX_BUF_SIZE) { Some(b) => b, None => return false },
+    ];
+
     let mut drv = Rtl8139 {
         io_base,
-        rx_buffer: [0; RX_BUF_SIZE],
+        rx_buffer: rx_dma,
         rx_offset: 0,
+        tx_buf: tx_dma,
         tx_cur: 0,
         mac: [0; 6],
     };
@@ -69,9 +104,8 @@ pub fn init() -> bool {
             core::hint::spin_loop();
         }
 
-        // rx buffer address no paging yet so its virtual
-        let rx_ptr = drv.rx_buffer.as_ptr() as u32;
-        outl(io_base + REG_RBSTART, rx_ptr);
+        // rx buffer address must be the real physical address not our virtual pointer
+        outl(io_base + REG_RBSTART, drv.rx_buffer.phys);
 
         // which events to catch
         outw(io_base + REG_IMR, ISR_ROK | ISR_TOK);
@@ -109,10 +143,34 @@ pub fn send(data: &[u8]) -> bool {
     }
     let io = drv.io_base;
     let cur = drv.tx_cur;
+
+    // rtl8139 refuses frames shorter than 60 bytes copy into a padded buffer
+    let tx = &mut drv.tx_buf[cur];
+    tx.virt[..data.len()].copy_from_slice(data);
+    tx.virt[data.len()..60.max(data.len())].fill(0);
+    let len = data.len().max(60);
+
     unsafe {
-        let addr = data.as_ptr() as u32;
+        let addr = tx.phys;
+        let tsd = io + REG_TSD0 + (cur * 4) as u16;
         outl(io + REG_TSAD0 + (cur * 4) as u16, addr);
-        outl(io + REG_TSD0 + (cur * 4) as u16, data.len() as u32);
+        outl(tsd, len as u32);
+
+        // wait for the card to finish copying our buffer into its fifo
+        // OWN bit clears while dma is running and sets again once done
+        let mut tries = 0;
+        while inl(tsd) & TSD_OWN == 0 {
+            tries += 1;
+            if tries > 1_000_000 { break; }
+            core::hint::spin_loop();
+        }
+        // wait for the frame to actually go out onto the wire
+        tries = 0;
+        while inl(tsd) & TSD_TOK == 0 {
+            tries += 1;
+            if tries > 1_000_000 { break; }
+            core::hint::spin_loop();
+        }
     }
     drv.tx_cur = (cur + 1) % 4;
     true
@@ -138,10 +196,10 @@ pub fn receive(out: &mut [u8]) -> Option<usize> {
         let off = drv.rx_offset;
 
         // packet header little endian
-        let status = drv.rx_buffer[off] as u16
-            | ((drv.rx_buffer[off + 1] as u16) << 8);
-        let length = drv.rx_buffer[off + 2] as u16
-            | ((drv.rx_buffer[off + 3] as u16) << 8);
+        let status = drv.rx_buffer.virt[off] as u16
+            | ((drv.rx_buffer.virt[off + 1] as u16) << 8);
+        let length = drv.rx_buffer.virt[off + 2] as u16
+            | ((drv.rx_buffer.virt[off + 3] as u16) << 8);
 
         // validity check rok bit plus sane length bounds
         let rx_ok = status & 0x01 != 0;
@@ -158,7 +216,7 @@ pub fn receive(out: &mut [u8]) -> Option<usize> {
         let n = frame_len.min(out.len());
         for i in 0..n {
             // index wraps around the 8192 ring
-            out[i] = drv.rx_buffer[(data_start + i) % 8192];
+            out[i] = drv.rx_buffer.virt[(data_start + i) % 8192];
         }
 
         // advance offset to next packet align and wrap

@@ -130,6 +130,21 @@ pub fn alloc_frame() -> Option<u64> {
     FRAME_ALLOCATOR.lock().as_mut()?.alloc_frame()
 }
 
+// allocate count contiguous physical frames return physical base address
+// used by dma capable devices that need a real hardware address not a kernel pointer
+pub fn alloc_frames(count: usize) -> Option<u64> {
+    let mut guard = FRAME_ALLOCATOR.lock();
+    let fb = guard.as_mut()?;
+    let start = fb.find_free_run(count)?;
+    fb.mark_range_used(start, count);
+    Some(start as u64 * FRAME_SIZE)
+}
+
+// turn a physical address into a cpu usable pointer via the hhdm mapping
+pub fn phys_to_virt(phys: u64) -> Option<*mut u8> {
+    FRAME_ALLOCATOR.lock().as_ref().map(|fb| fb.phys_to_virt(phys))
+}
+
 #[allow(dead_code)]
 pub fn free_frame(addr: u64) {
     if let Some(fb) = FRAME_ALLOCATOR.lock().as_mut() {
