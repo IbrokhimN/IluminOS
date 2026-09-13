@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
 extern crate alloc;
 
@@ -57,7 +58,7 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
-    allocator::init();
+    mem::init();
     random::init();
     time::init();
 
