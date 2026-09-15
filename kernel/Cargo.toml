@@ -3,6 +3,10 @@ name = "limine-rust-template"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "bmp"] }
+
+
 [dependencies]
 limine = "0.5"
 spin = "0.9"
@@ -13,6 +17,9 @@ smoltcp = { version = "0.11", default-features = false, features = [
     "alloc",
     "medium-ethernet", "proto-ipv4", "socket-icmp", "socket-tcp",
 ] }
+embedded-graphics = "0.8"
+tinybmp = "0.5"
+time = { version = "0.3", default-features = false }
 
 [profile.dev]
 panic = "abort"
