@@ -775,16 +775,16 @@ fn cmd_neofetch() {
     let (sw, sh) = framebuffer::dimensions();
 
     // logo on the left info on the right
-    print_color!(CYAN,    "    ___         ");  print_color!(GREEN, "root");
+    print_color!(CYAN,    "                   ");  print_color!(GREEN, "root");
     print_color!(GRAY, "@"); print_color!(GREEN, "iluminos\n");
-    print_color!(CYAN,    "   / _ \\        "); print_color!(GRAY, "-----------------\n");
-    print_color!(CYAN,    "  | | | |       "); print_color!(YELLOW, "OS:      "); println!("IluminOS v0.2");
-    print_color!(CYAN,    "  | | | |       "); print_color!(YELLOW, "Kernel:  "); println!("Rust no_std");
-    print_color!(CYAN,    "  | |_| |       "); print_color!(YELLOW, "Uptime:  "); println!("{}h {}m {}s", h, m, s);
-    print_color!(CYAN,    "   \\___/        "); print_color!(YELLOW, "Shell:   "); println!("iluminos-sh");
-    print_color!(CYAN,    "               ");  print_color!(YELLOW, " Res:     "); println!("{}x{}", sw, sh);
-    print_color!(GRAY,    "               ");  print_color!(YELLOW, " Memory:  "); println!("{} / {} KB", used/1024, total/1024);
-    print_color!(GRAY,    "               ");  print_color!(YELLOW, " Disk:    "); println!("{} / {} blocks", disk_used, disk_total);
+    print_color!(CYAN,    "   |----| |-|      "); print_color!(GRAY, "-----------------\n");
+    print_color!(CYAN,    "     ||   | |      "); print_color!(YELLOW, " OS:      "); println!("IluminOS v0.2");
+    print_color!(CYAN,    "     ||   | |      "); print_color!(YELLOW, " Kernel:  "); println!("Rust no_std");
+    print_color!(CYAN,    "     ||   | |      "); print_color!(YELLOW, " Uptime:  "); println!("{}h {}m {}s", h, m, s);
+    print_color!(CYAN,    "     ||   | |      "); print_color!(YELLOW, " Shell:   "); println!("iluminos-sh");
+    print_color!(CYAN,    "   |----| |----|   ");  print_color!(YELLOW, " Res:     "); println!("{}x{}", sw, sh);
+    print_color!(GRAY,    "                   ");  print_color!(YELLOW, " Memory:  "); println!("{} / {} KB", used/1024, total/1024);
+    print_color!(GRAY,    "                   ");  print_color!(YELLOW, " Disk:    "); println!("{} / {} blocks", disk_used, disk_total);
     println!();
     // color palette
     print_color!(RED, "  ###"); print_color!(GREEN, "###"); print_color!(YELLOW, "###");
