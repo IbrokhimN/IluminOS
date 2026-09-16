@@ -1,5 +1,11 @@
 use core::fmt;
 use spin::{Mutex, Once};
+use embedded_graphics::{
+    pixelcolor::Rgb888,
+    prelude::*,
+    primitives::Rectangle,
+    Pixel,
+};
 
 // colors in 0x00rrggbb format
 pub const WHITE: u32    =    0xFFFFFF;  // #ffffff
@@ -27,20 +33,21 @@ pub const EVERFOREST_CYAN: u32         =   0x83C092;  // #83c092
 pub const EVERFOREST_WHITE: u32        =   0xD3C6AA;  // #d3c6aa
 
 
-// font file embedded into the binary at compile time
+// вшитый шрифт psf
 static FONT_BYTES: &[u8] = include_bytes!("./fonts/ruscii_8x8.psfu");
 
 struct PsfFont {
     width: usize,
     height: usize,
-    bytes_per_row: usize, // bytes per glyph row
-    glyph_size: usize,    // bytes per glyph
-    glyphs_offset: usize, // byte offset where glyphs start
+    bytes_per_row: usize,
+    glyph_size: usize,
+    glyphs_offset: usize,
     num_glyphs: usize,
 }
 
 impl PsfFont {
     fn parse(data: &[u8]) -> Self {
+        // проверка psf1
         if data.len() >= 4 && data[0] == 0x36 && data[1] == 0x04 {
             let mode = data[2];
             let charsize = data[3] as usize;
@@ -54,7 +61,7 @@ impl PsfFont {
                 num_glyphs,
             };
         }
-        // psf2 magic 0x72 0xb5 0x4a 0x86 then a header of le u32 fields
+        // проверка psf2
         if data.len() >= 32 && data[0] == 0x72 && data[1] == 0xb5 && data[2] == 0x4a && data[3] == 0x86 {
             let rd = |o: usize| -> usize {
                 u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]) as usize
@@ -74,13 +81,12 @@ impl PsfFont {
                 num_glyphs: length,
             };
         }
-        // unrecognized file fall back to a blank 8x16 font
+        // запасной шрифт если файл не распознан
         PsfFont { width: 8, height: 16, bytes_per_row: 1, glyph_size: 16, glyphs_offset: 0, num_glyphs: 0 }
     }
 
     #[inline]
     fn glyph(&self, ch: u8) -> &'static [u8] {
-        // psf unicode table is ignored index glyphs directly by char code
         let idx = if (ch as usize) < self.num_glyphs { ch as usize } else { 0 };
         let start = self.glyphs_offset + idx * self.glyph_size;
         let end = start + self.glyph_size;
@@ -89,7 +95,6 @@ impl PsfFont {
 
     #[inline]
     fn bit_set(&self, glyph: &[u8], x: usize, y: usize) -> bool {
-        // psf glyph rows are stored msb first
         let byte = glyph[y * self.bytes_per_row + x / 8];
         let bit = 7 - (x % 8);
         (byte & (1 << bit)) != 0
@@ -102,7 +107,6 @@ static FONT: Once<PsfFont> = Once::new();
 fn font() -> &'static PsfFont {
     FONT.call_once(|| PsfFont::parse(FONT_BYTES))
 }
-
 
 struct Fb {
     addr: *mut u8,
@@ -120,12 +124,12 @@ static FB: Mutex<Option<Fb>> = Mutex::new(None);
 
 static THEME_FG: Mutex<u32> = Mutex::new(EVERFOREST_FOREGROUND);
 
-// current theme text color
+// цвет текста темы
 pub fn theme_fg() -> u32 {
     *THEME_FG.lock()
 }
 
-// set theme colors
+// сменить цветовую тему
 pub fn set_theme(fg: u32, bg: u32) {
     *THEME_FG.lock() = fg;
     let mut guard = FB.lock();
@@ -137,8 +141,8 @@ pub fn set_theme(fg: u32, bg: u32) {
 
 unsafe impl Send for Fb {}
 
+// инициализация фреймбуфера
 pub fn init(addr: *mut u8, width: usize, height: usize, pitch: usize) {
-    // warm up font parsing so first print isnt slow
     font();
     let mut guard = FB.lock();
     *guard = Some(Fb {
@@ -156,6 +160,7 @@ pub fn init(addr: *mut u8, width: usize, height: usize, pitch: usize) {
     clear();
 }
 
+// установить текущий цвет
 pub fn set_color(color: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -163,7 +168,7 @@ pub fn set_color(color: u32) {
     }
 }
 
-// draw underline cursor for the editor
+// нарисовать курсор подчеркивания
 pub fn draw_edit_cursor(col: usize, row: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -171,7 +176,6 @@ pub fn draw_edit_cursor(col: usize, row: usize) {
         let px = col * f.width;
         let py = row * f.height;
         let fg = fb.fg;
-        // bottom 2 pixel rows of the cell
         for y in (f.height - 2)..f.height {
             for x in 0..f.width {
                 fb.put_pixel(px + x, py + y, fg);
@@ -184,7 +188,6 @@ pub fn draw_edit_cursor(col: usize, row: usize) {
 pub fn set_cursor_pos(col: usize, row: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        // erase cursor from old position if drawn
         if fb.cursor_on {
             let (ocx, ocy) = (fb.col, fb.row);
             let bg = fb.bg;
@@ -255,10 +258,8 @@ impl Fb {
         unsafe {
             let src = self.addr.add(line_bytes);
             let dst = self.addr;
-            // move old pixels up
             core::ptr::copy(src, dst, total - line_bytes);
 
-            // fill new bottom row with background color
             let start_y = self.height - font().height;
             let bg = self.bg;
 
@@ -284,8 +285,6 @@ impl Fb {
                 let (cx, cy) = (self.col, self.row);
                 self.draw_glyph(b' ', cx, cy);
             }
-            // 0x01 to 0x0f minus control codes are decorative glyphs see keyboard.rs
-            // 0x80 to 0xff is cyrillic see keyboard.rs layout
             0x01..=0x07 | 0x0b..=0x0f | 0x20..=0x7e | 0x80..=0xff => {
                 if self.col >= self.cols() {
                     self.newline();
@@ -299,6 +298,7 @@ impl Fb {
     }
 }
 
+// очистить экран
 pub fn clear() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -309,7 +309,6 @@ pub fn clear() {
                 core::ptr::write_bytes(fb.addr, 0, total);
             }
         } else {
-            // non black background fill pixel by pixel
             for y in 0..fb.height {
                 for x in 0..fb.width {
                     fb.put_pixel(x, y, bg);
@@ -322,6 +321,7 @@ pub fn clear() {
     }
 }
 
+// переключить видимость курсора
 pub fn toggle_cursor() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -337,6 +337,7 @@ pub fn toggle_cursor() {
     }
 }
 
+// скрыть курсор
 pub fn hide_cursor() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -349,8 +350,45 @@ pub fn hide_cursor() {
     }
 }
 
+// буфер пикселей напрямую из физ памяти без кучи
+pub struct RawCanvas {
+    ptr: *mut u32,
+    len: usize,
+}
 
-// screen size in pixels for the gui
+unsafe impl Send for RawCanvas {}
+
+// базовый виртуальный адрес для холста
+const CANVAS_BASE: u64 = 0xFFFF_A000_0000_0000;
+
+impl RawCanvas {
+    // выделить физические фреймы и смапить их
+    pub fn new(pixel_count: usize) -> Option<Self> {
+        use crate::mem::{allocator, paging};
+
+        let bytes = (pixel_count as u64) * 4;
+        let frame_count = bytes.div_ceil(allocator::FRAME_SIZE) as usize;
+        let phys_base = allocator::alloc_frames(frame_count)?;
+
+        for i in 0..frame_count as u64 {
+            let virt = CANVAS_BASE + i * allocator::FRAME_SIZE;
+            let phys = phys_base + i * allocator::FRAME_SIZE;
+            paging::map(virt, phys, paging::WRITABLE | paging::NO_EXECUTE).ok()?;
+        }
+
+        Some(RawCanvas { ptr: CANVAS_BASE as *mut u32, len: pixel_count })
+    }
+
+    pub fn as_slice(&self) -> &[u32] {
+        unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u32] {
+        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
+// размеры экрана в пикселях
 pub fn dimensions() -> (usize, usize) {
     let guard = FB.lock();
     if let Some(fb) = guard.as_ref() {
@@ -360,42 +398,149 @@ pub fn dimensions() -> (usize, usize) {
     }
 }
 
-// set one pixel directly for the gui
-pub fn pixel(x: usize, y: usize, color: u32) {
-    let mut guard = FB.lock();
-    if let Some(fb) = guard.as_mut() {
-        fb.put_pixel(x, y, color);
-    }
-}
-
-// filled rectangle
-pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
-    let mut guard = FB.lock();
-    if let Some(fb) = guard.as_mut() {
-        for yy in y..y + h {
-            for xx in x..x + w {
-                fb.put_pixel(xx, yy, color);
+// скопировать область экрана в буфер
+pub fn capture_into(dst: &mut [u32], x: usize, y: usize, w: usize, h: usize) {
+    let guard = FB.lock();
+    if let Some(fb) = guard.as_ref() {
+        for row in 0..h {
+            let sy = y + row;
+            if sy >= fb.height {
+                break;
+            }
+            for col in 0..w {
+                let sx = x + col;
+                if sx >= fb.width {
+                    break;
+                }
+                let offset = sy * fb.pitch + sx * 4;
+                dst[row * w + col] = unsafe { fb.addr.add(offset).cast::<u32>().read_volatile() };
             }
         }
     }
 }
 
-// 1 pixel rectangle outline
-pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
+// скопировать буфер обратно на экран
+pub fn blit(x: usize, y: usize, w: usize, h: usize, buf: &[u32]) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
-        for xx in x..x + w {
-            fb.put_pixel(xx, y, color);
-            fb.put_pixel(xx, y + h - 1, color);
-        }
-        for yy in y..y + h {
-            fb.put_pixel(x, yy, color);
-            fb.put_pixel(x + w - 1, yy, color);
+        for row in 0..h {
+            let dy = y + row;
+            if dy >= fb.height {
+                break;
+            }
+            let row_start = row * w;
+            for col in 0..w {
+                let dx = x + col;
+                if dx >= fb.width {
+                    break;
+                }
+                fb.put_pixel(dx, dy, buf[row_start + col]);
+            }
         }
     }
 }
 
-// draw one glyph at a pixel position
+// конвертация u32 в rgb888
+pub fn u32_to_rgb888(color: u32) -> Rgb888 {
+    Rgb888::new((color >> 16) as u8, (color >> 8) as u8, color as u8)
+}
+
+// конвертация rgb888 в u32
+fn rgb888_to_u32(color: Rgb888) -> u32 {
+    ((color.r() as u32) << 16) | ((color.g() as u32) << 8) | color.b() as u32
+}
+
+pub struct Display;
+
+impl OriginDimensions for Display {
+    fn size(&self) -> Size {
+        let (w, h) = dimensions();
+        Size::new(w as u32, h as u32)
+    }
+}
+
+impl DrawTarget for Display {
+    type Color = Rgb888;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        let mut guard = FB.lock();
+        if let Some(fb) = guard.as_mut() {
+            for Pixel(point, color) in pixels {
+                if point.x >= 0 && point.y >= 0 {
+                    fb.put_pixel(point.x as usize, point.y as usize, rgb888_to_u32(color));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // быстрый закрас прямоугольника
+    fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+        let mut guard = FB.lock();
+        if let Some(fb) = guard.as_mut() {
+            let c = rgb888_to_u32(color);
+            let x0 = area.top_left.x.max(0) as usize;
+            let y0 = area.top_left.y.max(0) as usize;
+            for y in y0..y0 + area.size.height as usize {
+                for x in x0..x0 + area.size.width as usize {
+                    fb.put_pixel(x, y, c);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // быстрая отрисовка сплошного потока пикселей
+    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Self::Color>,
+    {
+        let mut guard = FB.lock();
+        if let Some(fb) = guard.as_mut() {
+            let x0 = area.top_left.x.max(0) as usize;
+            let y0 = area.top_left.y.max(0) as usize;
+            let w = area.size.width as usize;
+            let h = area.size.height as usize;
+            let mut colors = colors.into_iter();
+            'rows: for row in 0..h {
+                let y = y0 + row;
+                for col in 0..w {
+                    let Some(color) = colors.next() else { break 'rows };
+                    let x = x0 + col;
+                    if x < fb.width && y < fb.height {
+                        fb.put_pixel(x, y, rgb888_to_u32(color));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+// нарисовать один пиксель
+pub fn pixel(x: usize, y: usize, color: u32) {
+    let _ = Display.draw_iter([Pixel(Point::new(x as i32, y as i32), u32_to_rgb888(color))]);
+}
+
+// закрашенный прямоугольник
+pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
+    use embedded_graphics::primitives::PrimitiveStyle;
+    let rect = Rectangle::new(Point::new(x as i32, y as i32), Size::new(w as u32, h as u32));
+    let _ = rect.into_styled(PrimitiveStyle::with_fill(u32_to_rgb888(color))).draw(&mut Display);
+}
+
+// контур прямоугольника в один пиксель
+pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
+    use embedded_graphics::primitives::PrimitiveStyle;
+    let rect = Rectangle::new(Point::new(x as i32, y as i32), Size::new(w as u32, h as u32));
+    let _ = rect.into_styled(PrimitiveStyle::with_stroke(u32_to_rgb888(color), 1)).draw(&mut Display);
+}
+
+// нарисовать символ по координатам
 pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -411,7 +556,7 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
     }
 }
 
-// draw text at a pixel position uses chars not bytes to keep glyph codes intact
+// нарисовать строку по координатам
 pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     let mut x = px;
     let w = font().width;
@@ -421,49 +566,46 @@ pub fn draw_text_at(text: &str, px: usize, py: usize, fg: u32) {
     }
 }
 
-
-// draw mouse cursor arrow at position 12x12
+// нарисовать стрелку курсора мыши
 pub fn draw_cursor_arrow(px: usize, py: usize) {
-    // arrow bitmask 1 black outline 2 white fill 0 transparent
-    let arrow: [&[u8]; 12] = [
-        b"1           ",
-        b"11          ",
-        b"121         ",
-        b"1221        ",
-        b"12221       ",
-        b"122221      ",
-        b"1222221     ",
-        b"12222221    ",
-        b"122221111   ",
-        b"1221221     ",
-        b"121 1221    ",
-        b"11   1221   ",
-    ];
-    let mut guard = FB.lock();
-    if let Some(fb) = guard.as_mut() {
-        for (row, line) in arrow.iter().enumerate() {
-            for (col, &ch) in line.iter().enumerate() {
-                let color = match ch {
-                    b'1' => Some(0x000000u32), // black outline
-                    b'2' => Some(0xFFFFFFu32), // white fill
-                    _ => None,
-                };
-                if let Some(c) = color {
-                    fb.put_pixel(px + col, py + row, c);
-                }
+    fill_triangle_local(px, py, (0, 0), (0, 11), (8, 8), BLACK);
+    fill_triangle_local(px, py, (1, 2), (1, 9), (6, 7), WHITE);
+}
+
+// проверка стороны точки относительно отрезка
+fn edge_sign(p: (i32, i32), a: (i32, i32), b: (i32, i32)) -> i32 {
+    (p.0 - b.0) * (a.1 - b.1) - (a.0 - b.0) * (p.1 - b.1)
+}
+
+// закрасить треугольник
+fn fill_triangle_local(px: usize, py: usize, a: (i32, i32), b: (i32, i32), c: (i32, i32), color: u32) {
+    let min_x = a.0.min(b.0).min(c.0).max(0);
+    let max_x = a.0.max(b.0).max(c.0).min(11);
+    let min_y = a.1.min(b.1).min(c.1).max(0);
+    let max_y = a.1.max(b.1).max(c.1).min(11);
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let p = (x, y);
+            let d1 = edge_sign(p, a, b);
+            let d2 = edge_sign(p, b, c);
+            let d3 = edge_sign(p, c, a);
+            let has_neg = d1 < 0 || d2 < 0 || d3 < 0;
+            let has_pos = d1 > 0 || d2 > 0 || d3 > 0;
+            if !(has_neg && has_pos) {
+                pixel(px + x as usize, py + y as usize, color);
             }
         }
     }
 }
 
-
-// 12x12 pixel buffer to save background under cursor
+// буфер для сохранения фона под курсором
 static mut CURSOR_BG: [u32; 144] = [0; 144];
 static mut CURSOR_SAVED: bool = false;
 static mut CURSOR_X: usize = 0;
 static mut CURSOR_Y: usize = 0;
 
-// save background under future cursor position
+// сохранить пиксели под курсором
 pub fn save_under_cursor(px: usize, py: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -486,7 +628,7 @@ pub fn save_under_cursor(px: usize, py: usize) {
     }
 }
 
-// restore background where cursor was
+// восстановить пиксели под курсором
 pub fn restore_under_cursor() {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -508,8 +650,7 @@ pub fn restore_under_cursor() {
     }
 }
 
-
-// draw glyph scaled each pixel becomes a scale by scale square
+// нарисовать увеличенный символ
 pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
@@ -518,7 +659,6 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
         for row in 0..f.height {
             for col in 0..f.width {
                 if f.bit_set(glyph, col, row) {
-                    // draw a scale by scale square instead of one pixel
                     for sy in 0..scale {
                         for sx in 0..scale {
                             fb.put_pixel(px + col * scale + sx, py + row * scale + sy, fg);
@@ -530,7 +670,7 @@ pub fn draw_char_scaled(ch: u8, px: usize, py: usize, fg: u32, scale: usize) {
     }
 }
 
-// draw scaled text return width in pixels
+// нарисовать увеличенный текст
 pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize) -> usize {
     let mut x = px;
     let w = font().width;
@@ -541,14 +681,12 @@ pub fn draw_text_scaled(text: &str, px: usize, py: usize, fg: u32, scale: usize)
     x - px
 }
 
-
 pub struct Writer;
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut guard = FB.lock();
         if let Some(fb) = guard.as_mut() {
-            // chars not bytes see draw_text_at
             for c in s.chars() {
                 fb.write_char(c as u8);
             }

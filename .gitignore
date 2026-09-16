@@ -1,0 +1,29 @@
+// build target and binaries
+target/
+
+// iso images and file system images
+*.iso
+*.img
+
+// network packet captures
+*.pcap
+
+// limine bootloader build artifacts
+limine/limine
+limine/limine.bin
+limine/limine-bios.sys
+limine/limine-bios-cd.bin
+limine/limine-uefi-cd.bin
+limine/*.o
+limine/*.a
+
+// edk2 ovmf bios files
+edk2-ovmf/*.fd
+edk2-ovmf/*.bin
+
+// temporary editor and system files
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
