@@ -13,19 +13,33 @@ mod gui;
 mod apps;
 mod shell;
 
-// flat aliases at crate root so old crate module paths keep working
 pub use kcore::{random, time, banner, login};
 pub use mem::allocator;
 pub use drivers::{port, keyboard, mouse, ata, sound};
 pub use drivers::net as tcp;              // crate::tcp::pci / net / rtl8139 / device
-pub use gui::{framebuffer, html};
-pub use apps::{editor, monitor, piano, script, wasm};
-// gui apps like clock calc paint live at crate::gui::widgets::apps
+pub use gui::{framebuffer, html, gemtext};
+pub use apps::{editor, monitor, piano, script, wasm, gemini};
+
 
 use ::core::arch::asm;
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
 use framebuffer::{GREEN, GRAY};
+
+unsafe fn enable_sse() {
+    unsafe {
+        asm!(
+            "mov rax, cr0",
+            "and ax, 0xFFFB",
+            "or ax, 0x2",  
+            "mov cr0, rax",
+            "mov rax, cr4",
+            "or ax, 3 << 9",
+            "mov cr4, rax",
+            out("rax") _,
+        );
+    }
+}
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -45,6 +59,10 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
+    unsafe {
+        enable_sse();
+    }
+
     assert!(BASE_REVISION.is_supported());
 
     if let Some(fb_response) = FRAMEBUFFER_REQUEST.get_response() {

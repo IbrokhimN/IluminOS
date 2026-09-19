@@ -15,11 +15,15 @@ linked_list_allocator = "0.10"
 wasmi = { version = "0.31", default-features = false }
 smoltcp = { version = "0.11", default-features = false, features = [
     "alloc",
-    "medium-ethernet", "proto-ipv4", "socket-icmp", "socket-tcp",
+    "medium-ethernet", "proto-ipv4", "socket-icmp", "socket-tcp", "socket-udp",
 ] }
 embedded-graphics = "0.8"
 tinybmp = "0.5"
 time = { version = "0.3", default-features = false }
+embedded-tls = { version = "0.16", default-features = false }
+embedded-text = "0.7"
+embedded-io  = { version = "0.6", default-features = false }
+rand_core    = { version = "0.6", default-features = false }
 
 [profile.dev]
 panic = "abort"

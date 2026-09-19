@@ -21,6 +21,7 @@ pub struct Block {
     pub bg: Option<u32>,    // block background if any
     pub underline: bool,
     pub is_link: bool,
+    pub href: String,       // link target, only meaningful when is_link is true
     pub indent: usize,      // left indent in pixels
     pub center: bool,       // center align
     pub br_after: bool,
@@ -37,6 +38,7 @@ impl Block {
             bg: None,
             underline: false,
             is_link: false,
+            href: String::new(),
             indent: 0,
             center: false,
             br_after: false,
@@ -54,12 +56,13 @@ const COL_QUOTE: u32 = 0x666666;
 const COL_BOLD: u32 = 0xAA0000;
 
 // style state during parsing
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Style {
     scale: usize,
     color: u32,
     underline: bool,
     is_link: bool,
+    href: String,
     bold: bool,
     center: bool,
     indent: usize,
@@ -74,6 +77,7 @@ impl Style {
             color: COL_TEXT,
             underline: false,
             is_link: false,
+            href: String::new(),
             bold: false,
             center: false,
             indent: 0,
@@ -116,6 +120,22 @@ fn extract_color(inner: &str) -> Option<u32> {
     None
 }
 
+fn extract_attr(inner: &str, attr: &str) -> Option<String> {
+    let lower = inner.to_lowercase_ascii();
+    let pos = lower.find(attr)?;
+    let rest = inner.get(pos + attr.len()..)?.trim_start();
+    let rest = rest.strip_prefix('=')?.trim_start();
+    let quote = rest.chars().next()?;
+    if quote == '"' || quote == '\'' {
+        let after = &rest[1..];
+        let end = after.find(quote)?;
+        Some(String::from(&after[..end]))
+    } else {
+        let val: String = rest.chars().take_while(|c| !c.is_whitespace() && *c != '>').collect();
+        if val.is_empty() { None } else { Some(val) }
+    }
+}
+
 pub struct Document {
     pub title: String,
     pub blocks: Vec<Block>,
@@ -144,6 +164,7 @@ pub fn parse(html: &str) -> Document {
             b.color = if style.bold { COL_BOLD } else { style.color };
             b.underline = style.underline;
             b.is_link = style.is_link;
+            b.href = style.href.clone();
             b.center = style.center;
             b.indent = style.indent;
             b.bg = style.bg;
@@ -191,7 +212,19 @@ pub fn parse(html: &str) -> Document {
                     "b" | "strong" => { style.bold = !closing; }
                     "i" | "em" => { style.color = if closing { COL_TEXT } else { 0x006666 }; }
                     "u" => { style.underline = !closing; }
-                    "a" => { if closing { style.is_link=false; style.underline=false; style.color=COL_TEXT; } else { style.is_link=true; style.underline=true; style.color=COL_LINK; } }
+                    "a" => {
+                        if closing {
+                            style.is_link = false;
+                            style.underline = false;
+                            style.color = COL_TEXT;
+                            style.href = String::new();
+                        } else {
+                            style.is_link = true;
+                            style.underline = true;
+                            style.color = COL_LINK;
+                            style.href = extract_attr(name_part, "href").unwrap_or_default();
+                        }
+                    }
                     "code" => { if closing { style.kind=BlockKind::Text; style.color=COL_TEXT; style.bg=None; } else { style.kind=BlockKind::Code; style.color=COL_CODE; style.bg=Some(COL_CODE_BG); } }
                     "center" => { style.center = !closing; }
                     "blockquote" => { if closing { style.kind=BlockKind::Text; style.color=COL_TEXT; style.indent=0; } else { style.kind=BlockKind::Quote; style.color=COL_QUOTE; style.indent=20; } }

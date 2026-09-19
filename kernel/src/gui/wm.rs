@@ -132,8 +132,8 @@ pub fn route_draw(widget: &mut dyn Widget) {
 
 // app adapters
 
-use crate::gui::widgets::apps::{Browser, Calc, Clock, Paint, Term};
-use crate::keyboard::{KEY_BACKSPACE, KEY_ENTER};
+use crate::gui::widgets::apps::{Browser, Calc, Clock, Files, Paint, Term};
+use crate::keyboard::{KEY_BACKSPACE, KEY_DOWN, KEY_ENTER, KEY_UP};
 
 impl Widget for Calc {
     fn draw(&mut self) {
@@ -206,10 +206,15 @@ impl Widget for Browser {
     fn on_click(&mut self, x: i32, y: i32) -> bool {
         if self.search_btn_hit(x, y) {
             self.do_search();
-            true
-        } else {
-            false
+            return true;
         }
+        if self.viewing_html {
+            if let Some(href) = self.link_at(x, y) {
+                self.navigate_link(&href);
+                return true;
+            }
+        }
+        false
     }
 
     fn on_key(&mut self, key: u8) -> bool {
@@ -222,12 +227,34 @@ impl Widget for Browser {
                 self.query.pop();
                 true
             }
+            KEY_UP if self.viewing_html => {
+                self.scroll(-24);
+                true
+            }
+            KEY_DOWN if self.viewing_html => {
+                self.scroll(24);
+                true
+            }
             0x20..=0x7e | 0x80..=0xff => {
                 self.query.push(key as char);
                 true
             }
             _ => false,
         }
+    }
+}
+
+impl Widget for Files {
+    fn draw(&mut self) {
+        self.redraw();
+    }
+
+    fn on_click(&mut self, x: i32, y: i32) -> bool {
+        Files::on_click(self, x, y)
+    }
+
+    fn on_key(&mut self, key: u8) -> bool {
+        Files::on_key(self, key)
     }
 }
 

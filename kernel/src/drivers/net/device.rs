@@ -1,5 +1,3 @@
-// bridges rtl8139 driver to smoltcp via device trait
-
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::time::Instant;
 use crate::tcp::rtl8139;

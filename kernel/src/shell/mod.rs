@@ -19,6 +19,7 @@ const COMMANDS: &[&str] = &[
     "uptime", "whoami", "hostname", "theme", "history", "cowsay", "calc",
     "date", "about", "tree", "wc", "find", "cp", "lspci", "nic", "ping", "htop", "piano",
     "lock", "beep", "reboot", "shutdown", "neofetch", "sleep", "dice", "banner",
+    "gemini", "gem",
 ];
 
 // command history and executed count
@@ -238,6 +239,7 @@ fn handle(line: &str) {
         "sleep" => cmd_sleep(arg),
         "dice" => cmd_dice(),
         "banner" => crate::banner::show(),
+        "gemini" | "gem" => cmd_gemini(arg),
         _ => print_color!(RED, "unknown command: {}. type help\n", cmd),
     }
 }
@@ -278,6 +280,8 @@ println!("|  gui                          Switch to graphic desktop |");
 println!("|  clear / help                 Control terminal session  |");
 println!("|  lock / neofetch              Lock screen / sysinfo    |");
 println!("|  beep / dice / sleep <n>      Sound / random / pause   |");
+println!("|  ping <ip> / nic / lspci      Network diagnostics       |");
+println!("|  gemini / gem   [url]         Gemini protocol browser   |");
 println!("|  reboot / shutdown            Power control            |");
 println!("|                                                         |");
 print_color!(GREEN, "+---------------------------------------------------------+\n");
@@ -731,6 +735,11 @@ fn cmd_ping(arg: &str) {
         return;
     }
     crate::tcp::net::cmd_ping(arg);
+}
+
+fn cmd_gemini(arg: &str) {
+    let start = if arg.is_empty() { None } else { Some(arg) };
+    crate::gemini::run(start);
 }
 
 // lock screen back to login

@@ -388,6 +388,24 @@ impl RawCanvas {
     }
 }
 
+pub fn console_cols() -> usize {
+    let guard = FB.lock();
+    if let Some(fb) = guard.as_ref() {
+        fb.cols()
+    } else {
+        80
+    }
+}
+
+pub fn console_rows() -> usize {
+    let guard = FB.lock();
+    if let Some(fb) = guard.as_ref() {
+        fb.rows()
+    } else {
+        25
+    }
+}
+
 // размеры экрана в пикселях
 pub fn dimensions() -> (usize, usize) {
     let guard = FB.lock();
@@ -452,6 +470,23 @@ fn rgb888_to_u32(color: Rgb888) -> u32 {
 
 pub struct Display;
 
+static CLIP: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
+
+pub fn set_clip(x0: i32, y0: i32, x1: i32, y1: i32) {
+    *CLIP.lock() = Some((x0, y0, x1, y1));
+}
+
+pub fn clear_clip() {
+    *CLIP.lock() = None;
+}
+
+fn clip_ok(clip: Option<(i32, i32, i32, i32)>, x: i32, y: i32) -> bool {
+    match clip {
+        Some((x0, y0, x1, y1)) => x >= x0 && x < x1 && y >= y0 && y < y1,
+        None => true,
+    }
+}
+
 impl OriginDimensions for Display {
     fn size(&self) -> Size {
         let (w, h) = dimensions();
@@ -467,10 +502,11 @@ impl DrawTarget for Display {
     where
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
+        let clip = *CLIP.lock();
         let mut guard = FB.lock();
         if let Some(fb) = guard.as_mut() {
             for Pixel(point, color) in pixels {
-                if point.x >= 0 && point.y >= 0 {
+                if point.x >= 0 && point.y >= 0 && clip_ok(clip, point.x, point.y) {
                     fb.put_pixel(point.x as usize, point.y as usize, rgb888_to_u32(color));
                 }
             }
@@ -480,6 +516,7 @@ impl DrawTarget for Display {
 
     // быстрый закрас прямоугольника
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+        let clip = *CLIP.lock();
         let mut guard = FB.lock();
         if let Some(fb) = guard.as_mut() {
             let c = rgb888_to_u32(color);
@@ -487,7 +524,9 @@ impl DrawTarget for Display {
             let y0 = area.top_left.y.max(0) as usize;
             for y in y0..y0 + area.size.height as usize {
                 for x in x0..x0 + area.size.width as usize {
-                    fb.put_pixel(x, y, c);
+                    if clip_ok(clip, x as i32, y as i32) {
+                        fb.put_pixel(x, y, c);
+                    }
                 }
             }
         }
@@ -499,6 +538,7 @@ impl DrawTarget for Display {
     where
         I: IntoIterator<Item = Self::Color>,
     {
+        let clip = *CLIP.lock();
         let mut guard = FB.lock();
         if let Some(fb) = guard.as_mut() {
             let x0 = area.top_left.x.max(0) as usize;
@@ -511,7 +551,7 @@ impl DrawTarget for Display {
                 for col in 0..w {
                     let Some(color) = colors.next() else { break 'rows };
                     let x = x0 + col;
-                    if x < fb.width && y < fb.height {
+                    if x < fb.width && y < fb.height && clip_ok(clip, x as i32, y as i32) {
                         fb.put_pixel(x, y, rgb888_to_u32(color));
                     }
                 }
@@ -542,6 +582,7 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
 
 // нарисовать символ по координатам
 pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
+    let clip = *CLIP.lock();
     let mut guard = FB.lock();
     if let Some(fb) = guard.as_mut() {
         let f = font();
@@ -549,7 +590,10 @@ pub fn draw_char_at(ch: u8, px: usize, py: usize, fg: u32) {
         for row in 0..f.height {
             for col in 0..f.width {
                 if f.bit_set(glyph, col, row) {
-                    fb.put_pixel(px + col, py + row, fg);
+                    let (x, y) = (px + col, py + row);
+                    if clip_ok(clip, x as i32, y as i32) {
+                        fb.put_pixel(x, y, fg);
+                    }
                 }
             }
         }

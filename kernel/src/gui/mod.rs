@@ -2,6 +2,7 @@
 pub mod framebuffer;
 pub mod desktop;
 pub mod html;
+pub mod gemtext;
 pub mod style;
 pub mod widgets;
 pub mod wm;

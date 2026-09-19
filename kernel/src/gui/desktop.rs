@@ -1,7 +1,7 @@
 // desktop draws background icons taskbar runs main event loop
 use crate::framebuffer;
 use crate::gui::style::{self, Icon};
-use crate::gui::widgets::apps::{Browser, Calc, Clock, Paint, Term};
+use crate::gui::widgets::apps::{Browser, Calc, Clock, Files, Paint, Term};
 use crate::gui::wm::{self, Rect, Widget, WindowGeom};
 use crate::keyboard;
 use crate::mouse;
@@ -12,6 +12,7 @@ use spin::Mutex;
 enum App {
     Terminal,
     Browser,
+    Files,
     Clock,
     Calc,
     Paint,
@@ -22,6 +23,7 @@ impl App {
         match self {
             App::Terminal => "Terminal",
             App::Browser => "Not-Google",
+            App::Files => "Files",
             App::Clock => "Clock",
             App::Calc => "Calculator",
             App::Paint => "Paint",
@@ -32,6 +34,7 @@ impl App {
         match self {
             App::Terminal => &style::ICON_TERMINAL,
             App::Browser => &style::ICON_BROWSER,
+            App::Files => &style::ICON_FILES,
             App::Clock => &style::ICON_CLOCK,
             App::Calc => &style::ICON_CALC,
             App::Paint => &style::ICON_PAINT,
@@ -43,6 +46,7 @@ impl App {
         match self {
             App::Terminal => Box::new(Term::new(cx, cy, cw, ch)),
             App::Browser => Box::new(Browser::new(cx, cy, cw, ch)),
+            App::Files => Box::new(Files::new(cx, cy, cw, ch)),
             App::Clock => Box::new(Clock::new(cx, cy, cw, ch)),
             App::Calc => Box::new(Calc::new(cx, cy, cw, ch)),
             App::Paint => Box::new(Paint::new(cx, cy, cw, ch)),
@@ -180,6 +184,12 @@ pub fn run() {
             y: 390,
             label: "Paint",
             app: App::Paint,
+        },
+        DesktopIcon {
+            x: 30,
+            y: 480,
+            label: "Files",
+            app: App::Files,
         },
     ];
 
