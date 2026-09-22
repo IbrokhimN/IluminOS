@@ -6,7 +6,7 @@ Around 9,400 lines of custom code across 48 modules.
 
 https://github.com/user-attachments/assets/54edbe24-f3ee-44f6-a634-697f1c2de1c1
 
-![Терминал IluminOS](https://raw.githubusercontent.com/IbrokhimN/IluminOS/refs/heads/main/docs/tty.png)
+<img width="1279" height="796" alt="изображение" src="https://github.com/user-attachments/assets/986c4fca-de99-4b3f-bcb9-a8a1650a98ce" />
 
 ## What IluminOS Can Do
 
@@ -404,6 +404,8 @@ Dependencies are `limine`, `spin`, `linked_list_allocator`, `wasmi`, `smoltcp`, 
 
 ## Author
 
-**Ibrokhim Nurullaev**, [github.com/IbrokhimN](https://github.com/IbrokhimN)
+**Ibrokhim Nurullaev**, [github.com/IbrokhimN](https://github.com/IbrokhimN)  
+**Kamron Burkhanov**, [github.com/kbur-coder](https://github.com/kbur-coder)
+
 
 An educational project, an operating system demonstrating systems programming in Rust, from booting on bare metal to a graphical interface with a browser that can reach real capsules over its own network stack.
