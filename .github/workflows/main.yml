@@ -17,6 +17,10 @@ jobs:
         working-directory: kernel
         run: rustup show
 
+      - name: Add bare-metal target
+        working-directory: kernel
+        run: rustup target add x86_64-unknown-none
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -28,4 +32,6 @@ jobs:
 
       - name: Build kernel
         working-directory: kernel
-        run: cargo build --release
+        run: |
+          RUSTFLAGS="-C relocation-model=static -C target-feature=+sse,+sse2,-soft-float" \
+            cargo build --target x86_64-unknown-none --profile dev
