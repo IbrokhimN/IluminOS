@@ -1,5 +1,9 @@
 # IluminOS 🦀
 
+[![build](https://github.com/IbrokhimN/IluminOS/actions/workflows/main.yml/badge.svg)](https://github.com/IbrokhimN/IluminOS/actions/workflows/main.yml)
+![Rust](https://img.shields.io/badge/rust-nightly-orange?logo=rust)
+![License](https://img.shields.io/github/license/IbrokhimN/IluminOS)
+
 A 64-bit educational operating system written from scratch in Rust and running on bare metal (in QEMU). From boot and the login screen to a graphical interface with a browser that can reach real Gemini capsules over the network, everything is implemented from scratch, without the standard library.
 
 Around 9,400 lines of custom code across 48 modules.
