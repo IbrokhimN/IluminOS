@@ -48,20 +48,33 @@ pub fn run() {
     framebuffer::clear();
     draw_help();
 
-    loop {
-        // block waiting for key
-        let key = keyboard::read_key();
+    let mut held_key: u8 = 0;
 
-        if key == 0x1b { // esc quits
+    loop {
+        let Some((key, pressed)) = keyboard::try_read_key_event() else {
+            core::hint::spin_loop();
+            continue;
+        };
+
+        if pressed && key == 0x1b {
             break;
         }
 
-        let freq = key_to_note(key);
-        if freq > 0 {
-            // show played note
-            print_color!(GREEN, "  ~ {} ({} Hz)\n", note_name(key), freq);
-            // beep the note
-            sound::beep(freq, 2);
+        if pressed {
+            if key == held_key {
+                continue;
+            }
+            let freq = key_to_note(key);
+            if freq > 0 {
+                print_color!(GREEN, "  ~ {} ({} Hz)\n", note_name(key), freq);
+                sound::play_freq(freq); // глушит предыдущую ноту сама
+                held_key = key;
+            }
+        } else {
+            if key == held_key {
+                sound::stop();
+                held_key = 0;
+            }
         }
     }
 
@@ -81,5 +94,5 @@ fn draw_help() {
     print_color!(GRAY,  "    s=C#  d=D#  g=F#  h=G#  j=A#\n\n");
     print_color!(WHITE, "  Higher octave:  q w e r t\n\n");
     print_color!(YELLOW, "  Press keys to play. Esc to quit.\n\n");
-    print_color!(RED, "  (note: PC Speaker needs QEMU audio backend to be heard)\n\n");
+    print_color!(RED, "  (note: SB16 needs QEMU -device sb16,audiodev=... to be heard)\n\n");
 }
