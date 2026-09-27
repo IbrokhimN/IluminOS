@@ -79,7 +79,7 @@ unsafe extern "C" fn kmain() -> ! {
     mem::init();
     random::init();
     time::init();
-
+    login::run();
     
 
     print_color!(GRAY, "booting...\n");
@@ -90,7 +90,16 @@ unsafe extern "C" fn kmain() -> ! {
     print_color!(GREEN, "[ok]");
     println!(" filesystem mounted");
 
-    login::run();
+    if sound::init() {
+        print_color!(GREEN, "[ok]");
+        println!(" sb16 sound initialized (dsp responded 0xAA)");
+    } else {
+        print_color!(framebuffer::RED, "[FAIL]");
+        println!(" sb16 sound init failed -- no 0xAA from DSP, check qemu -device sb16 config");
+    }
+    println!("press any key to continue booting...");
+    keyboard::read_key(); 
+
     banner::show();
     shell::run();
 }
