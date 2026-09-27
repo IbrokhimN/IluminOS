@@ -17,6 +17,7 @@ limine/limine-uefi-cd.bin
 limine/*.o
 limine/*.a
 
+kernel/kernel
 // edk2 ovmf bios files
 edk2-ovmf/*.fd
 edk2-ovmf/*.bin
@@ -27,3 +28,5 @@ edk2-ovmf/*.bin
 *~
 .idea/
 .vscode/
+*.zip
+*.tar.gz
