@@ -7,4 +7,5 @@ make run QEMUFLAGS="-m 2G \
   -netdev user,id=n0 \
   -object filter-dump,id=f0,netdev=n0,file=dump.pcap \
   -audiodev pipewire,id=snd \
-  -machine pcspk-audiodev=snd"
+  -machine pcspk-audiodev=snd \
+  -device sb16,audiodev=snd"
