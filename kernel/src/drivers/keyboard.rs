@@ -167,6 +167,97 @@ pub fn try_read_key() -> Option<u8> {
     process_one()
 }
 
+pub fn try_read_key_event() -> Option<(u8, bool)> {
+    if !has_key() {
+        return None;
+    }
+
+    let code = inb(0x60);
+
+    if code == 0xe0 {
+        STATE.lock().extended = true;
+        return None;
+    }
+
+    {
+        let mut s = STATE.lock();
+        if s.extended {
+            s.extended = false;
+            let released = code & 0x80 != 0;
+            let make = code & 0x7f;
+            match make {
+                0x1d => { s.ctrl = !released; return None; }
+                0x38 => { s.alt = !released; return None; }
+                0x5b | 0x5c => { s.win = !released; return None; }
+                _ => {}
+            }
+            drop(s);
+            if released {
+                return None;
+            }
+            return match code {
+                0x48 => Some((KEY_UP, true)),
+                0x50 => Some((KEY_DOWN, true)),
+                0x4b => Some((KEY_LEFT, true)),
+                0x4d => Some((KEY_RIGHT, true)),
+                _ => None,
+            };
+        }
+    }
+
+    let released = code & 0x80 != 0;
+    let make = code & 0x7f;
+
+    {
+        let mut s = STATE.lock();
+        match make {
+            0x2a | 0x36 => { s.shift = !released; return None; }
+            0x1d => { s.ctrl = !released; return None; }
+            0x38 => { s.alt = !released; return None; }
+            0x3a => {
+                if !released {
+                    s.caps = !s.caps;
+                }
+                return None;
+            }
+            _ => {}
+        }
+    }
+
+    let ascii = ascii_for_make(make)?;
+    Some((ascii, !released))
+}
+
+fn ascii_for_make(make: u8) -> Option<u8> {
+    match make {
+        0x1c => Some(KEY_ENTER),
+        0x0e => Some(KEY_BACKSPACE),
+        0x01 => Some(KEY_ESC),
+        0x0f => Some(KEY_TAB),
+        0x39 => Some(b' '),
+        0x02..=0x0b => {
+            let s = STATE.lock();
+            let shift = s.shift;
+            let ctrl = s.ctrl;
+            let alt = s.alt;
+            drop(s);
+            if ctrl && alt {
+                Some(FUN_SYMBOLS[(make - 0x02) as usize])
+            } else {
+                scancode_to_ascii(make, shift, false, Layout::En)
+            }
+        }
+        _ => {
+            let s = STATE.lock();
+            let upper = s.shift ^ s.caps;
+            let shift = s.shift;
+            let layout = s.layout;
+            drop(s);
+            scancode_to_ascii(make, shift, upper, layout)
+        }
+    }
+}
+
 // blocking read of one char
 pub fn read_key() -> u8 {
     loop {
