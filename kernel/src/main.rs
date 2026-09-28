@@ -18,7 +18,7 @@ pub use mem::allocator;
 pub use drivers::{port, keyboard, mouse, ata, sound};
 pub use drivers::net as tcp;              // crate::tcp::pci / net / rtl8139 / device
 pub use gui::{framebuffer, html, gemtext};
-pub use apps::{editor, monitor, piano, script, wasm, gemini};
+pub use apps::{editor, monitor, piano, player, script, wasm, gemini};
 
 
 use ::core::arch::asm;
@@ -79,7 +79,7 @@ unsafe extern "C" fn kmain() -> ! {
     mem::init();
     random::init();
     time::init();
-    login::run();
+
     
 
     print_color!(GRAY, "booting...\n");
@@ -98,8 +98,9 @@ unsafe extern "C" fn kmain() -> ! {
         println!(" sb16 sound init failed -- no 0xAA from DSP, check qemu -device sb16 config");
     }
     println!("press any key to continue booting...");
-    keyboard::read_key(); 
+    keyboard::read_key(); // пауза, чтобы строка выше не потерялась при следующей очистке экрана
 
+    login::run();
     banner::show();
     shell::run();
 }

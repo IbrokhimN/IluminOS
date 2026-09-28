@@ -2,6 +2,7 @@
 pub mod editor;
 pub mod monitor;
 pub mod piano;
+pub mod player;
 pub mod script;
 pub mod wasm;
 pub mod gemini;

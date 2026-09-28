@@ -19,7 +19,7 @@ const COMMANDS: &[&str] = &[
     "uptime", "whoami", "hostname", "theme", "history", "cowsay", "calc",
     "date", "about", "tree", "wc", "find", "cp", "lspci", "nic", "ping", "htop", "piano",
     "lock", "beep", "reboot", "shutdown", "neofetch", "sleep", "dice", "banner",
-    "gemini", "gem",
+    "gemini", "gem", "play", "songs",
 ];
 
 // command history and executed count
@@ -240,6 +240,8 @@ fn handle(line: &str) {
         "dice" => cmd_dice(),
         "banner" => crate::banner::show(),
         "gemini" | "gem" => cmd_gemini(arg),
+        "songs" => cmd_songs(),
+        "play" => cmd_play(arg),
         _ => print_color!(RED, "unknown command: {}. type help\n", cmd),
     }
 }
@@ -270,7 +272,7 @@ print_color!(RED, "+-- Core & Utilities -------------------------------------+ \
 println!("|                                                         |");
 println!("|  echo           <text>        Write text into console   |");
 println!("|  rand           [max]         Random number (hardware)  |");
-println!("|  cowsay         <text>        ASCII cow says text        |");
+println!("|  cowsay         <text>        ASCII cow says text       |");
 println!("|  uptime / date                Time since boot           |");
 println!("|  whoami/hostname              System identity           |");
 println!("|  theme      everforest|dark|light Switch color theme    |");
@@ -278,11 +280,13 @@ println!("|  history                      Show command history      |");
 println!("|  about                        System info & version     |");
 println!("|  gui                          Switch to graphic desktop |");
 println!("|  clear / help                 Control terminal session  |");
-println!("|  lock / neofetch              Lock screen / sysinfo    |");
-println!("|  beep / dice / sleep <n>      Sound / random / pause   |");
+println!("|  lock / neofetch              Lock screen / sysinfo     |");
+println!("|  beep / dice / sleep <n>      Sound / random / pause    |");
 println!("|  ping <ip> / nic / lspci      Network diagnostics       |");
 println!("|  gemini / gem   [url]         Gemini protocol browser   |");
-println!("|  reboot / shutdown            Power control            |");
+println!("|  songs                        Available music in OS     |");
+println!("|  play           [name]        Play selected song        |");
+println!("|  reboot / shutdown            Power control             |");
 println!("|                                                         |");
 print_color!(GREEN, "+---------------------------------------------------------+\n");
 }
@@ -754,6 +758,23 @@ fn cmd_lock() {
 fn cmd_beep() {
     crate::sound::beep(880, 1);
     print_color!(GRAY, "beep!\n");
+}
+
+// список встроенных (через include_bytes! в build.rs) raw-песен
+fn cmd_songs() {
+    print_color!(CYAN, "built-in songs:\n");
+    crate::player::list();
+}
+
+// проиграть встроенную песню по имени. без аргумента -- подсказка
+fn cmd_play(arg: &str) {
+    if arg.is_empty() {
+        print_color!(YELLOW, "usage: play <name>. type 'songs' to list available names\n");
+        return;
+    }
+    if !crate::player::play(arg) {
+        print_color!(RED, "no such song: \"{}\". type 'songs' to list available names\n", arg);
+    }
 }
 
 // reboot via keyboard controller port 0x64
