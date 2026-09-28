@@ -98,6 +98,7 @@ pub fn stop() {
     outb(DMA_MASK, 0x04 | 1);
 }
 
+// На будущее
 pub fn irq_ack() {
     let _ = inb(DSP_READ_STATUS);
 }
@@ -227,3 +228,127 @@ pub const NOTE_D5: u32 = 587;
 pub const NOTE_E5: u32 = 659;
 pub const NOTE_F5: u32 = 698;
 pub const NOTE_G5: u32 = 784;
+
+const STREAM_HALF_LEN: usize = 2048;
+const STREAM_BUF_LEN: usize = STREAM_HALF_LEN * 2;
+
+static mut STREAM_BUF_PHYS: u64 = 0;
+static mut STREAM_BUF_PTR: *mut u8 = core::ptr::null_mut();
+
+static mut LAST_PLAYING_HALF: u8 = 0;
+
+fn ensure_stream_buffer() -> bool {
+    unsafe {
+        if !STREAM_BUF_PTR.is_null() {
+            return true;
+        }
+        let Some(phys) = crate::mem::allocator::alloc_frames(1) else {
+            return false;
+        };
+        const ISA_DMA_LIMIT: u64 = 0x0100_0000;
+        if phys >= ISA_DMA_LIMIT {
+            return false;
+        }
+        let Some(virt_ptr) = crate::mem::allocator::phys_to_virt(phys) else {
+            return false;
+        };
+        STREAM_BUF_PHYS = phys;
+        STREAM_BUF_PTR = virt_ptr;
+        true
+    }
+}
+
+fn dma_current_count() -> u16 {
+    outb(DMA_CLEAR_FF, 0);
+    let lo = inb(DMA_CH1_COUNT) as u16;
+    let hi = inb(DMA_CH1_COUNT) as u16;
+    lo | (hi << 8)
+}
+
+fn current_playing_half() -> u8 {
+    let count = dma_current_count() as u32;
+    let max = (STREAM_BUF_LEN as u32).saturating_sub(1);
+    let played = max.saturating_sub(count.min(max));
+    if (played as usize) < STREAM_HALF_LEN { 0 } else { 1 }
+}
+
+pub struct SongPlayer {
+    data: &'static [u8],
+    pos: usize,
+    silence_fills: u8,
+}
+
+impl SongPlayer {
+    pub fn new(data: &'static [u8]) -> Self {
+        Self { data, pos: 0, silence_fills: 0 }
+    }
+
+    fn fill_half(&mut self, half_index: u8) {
+        unsafe {
+            let offset = half_index as usize * STREAM_HALF_LEN;
+            let dst = core::slice::from_raw_parts_mut(STREAM_BUF_PTR.add(offset), STREAM_HALF_LEN);
+
+            let remaining = self.data.len().saturating_sub(self.pos);
+            let take = remaining.min(STREAM_HALF_LEN);
+
+            if take > 0 {
+                dst[..take].copy_from_slice(&self.data[self.pos..self.pos + take]);
+                self.pos += take;
+            }
+            if take < STREAM_HALF_LEN {
+                for b in &mut dst[take..] {
+                    *b = 128;
+                }
+            }
+
+            self.silence_fills = if take == 0 {
+                self.silence_fills.saturating_add(1)
+            } else {
+                0
+            };
+        }
+    }
+
+    pub fn finished(&self) -> bool {
+        self.pos >= self.data.len()
+    }
+
+    pub fn drained(&self) -> bool {
+        self.silence_fills >= 2
+    }
+}
+
+pub fn stream_start(player: &mut SongPlayer, sample_rate: u16) -> bool {
+    if !ensure_stream_buffer() {
+        return false;
+    }
+
+    stop();
+    set_sample_rate(sample_rate);
+
+    player.fill_half(0);
+    player.fill_half(1);
+    unsafe { LAST_PLAYING_HALF = 0; }
+
+    let addr = unsafe { STREAM_BUF_PHYS as u32 };
+    program_dma8_autoinit(addr, STREAM_BUF_LEN as u16);
+
+    let count = (STREAM_BUF_LEN as u16).wrapping_sub(1);
+    dsp_write(0x48);
+    dsp_write((count & 0xFF) as u8);
+    dsp_write(((count >> 8) & 0xFF) as u8);
+    dsp_write(0x1C);
+
+    true
+}
+
+pub fn stream_tick(player: &mut SongPlayer) {
+    let playing_half = current_playing_half();
+    unsafe {
+        if playing_half != LAST_PLAYING_HALF {
+            let free_half = 1 - playing_half;
+            player.fill_half(free_half);
+            LAST_PLAYING_HALF = playing_half;
+        }
+    }
+}
