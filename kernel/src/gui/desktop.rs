@@ -1,7 +1,7 @@
 // desktop draws background icons taskbar runs main event loop
 use crate::framebuffer;
 use crate::gui::style::{self, Icon};
-use crate::gui::widgets::apps::{Browser, Calc, Clock, Files, Paint, Term};
+use crate::gui::widgets::apps::{Browser, Calc, Clock, Files, MusicPlayer, Paint, Term};
 use crate::gui::wm::{self, Rect, Widget, WindowGeom};
 use crate::keyboard;
 use crate::mouse;
@@ -16,6 +16,7 @@ enum App {
     Clock,
     Calc,
     Paint,
+    Player,
 }
 
 impl App {
@@ -27,6 +28,7 @@ impl App {
             App::Clock => "Clock",
             App::Calc => "Calculator",
             App::Paint => "Paint",
+            App::Player => "Player",
         }
     }
 
@@ -38,6 +40,7 @@ impl App {
             App::Clock => &style::ICON_CLOCK,
             App::Calc => &style::ICON_CALC,
             App::Paint => &style::ICON_PAINT,
+            App::Player => &style::ICON_PLAYER,
         }
     }
 
@@ -50,6 +53,7 @@ impl App {
             App::Clock => Box::new(Clock::new(cx, cy, cw, ch)),
             App::Calc => Box::new(Calc::new(cx, cy, cw, ch)),
             App::Paint => Box::new(Paint::new(cx, cy, cw, ch)),
+            App::Player => Box::new(MusicPlayer::new(cx, cy, cw, ch)),
         }
     }
 }
@@ -191,6 +195,12 @@ pub fn run() {
             label: "Files",
             app: App::Files,
         },
+        DesktopIcon {
+            x: 30,
+            y: 570,
+            label: "Player",
+            app: App::Player,
+        },
     ];
 
     let geom = WindowGeom::new((sw - 520) / 2, (sh - 340) / 2, 520, 340);
@@ -226,6 +236,10 @@ pub fn run() {
             framebuffer::draw_cursor_arrow(mx as usize, my as usize);
             last_mx = mx;
             last_my = my;
+        }
+
+        if let Some(w) = active.as_mut() {
+            wm::route_poll(w.as_mut());
         }
 
         if let Some(w) = active.as_mut() {

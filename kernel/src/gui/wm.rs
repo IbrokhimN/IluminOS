@@ -48,6 +48,9 @@ pub trait Widget {
     fn tick(&mut self) -> bool {
         false
     }
+
+    // called on every iteration of the desktop loop
+    fn poll(&mut self) {}
 }
 
 // window frame
@@ -126,13 +129,17 @@ pub fn route_tick(widget: &mut dyn Widget) -> bool {
     widget.tick()
 }
 
+pub fn route_poll(widget: &mut dyn Widget) {
+    widget.poll();
+}
+
 pub fn route_draw(widget: &mut dyn Widget) {
     widget.draw();
 }
 
 // app adapters
 
-use crate::gui::widgets::apps::{Browser, Calc, Clock, Files, Paint, Term};
+use crate::gui::widgets::apps::{Browser, Calc, Clock, Files, MusicPlayer, Paint, Term};
 use crate::keyboard::{KEY_BACKSPACE, KEY_DOWN, KEY_ENTER, KEY_UP};
 
 impl Widget for Calc {
@@ -255,6 +262,28 @@ impl Widget for Files {
 
     fn on_key(&mut self, key: u8) -> bool {
         Files::on_key(self, key)
+    }
+}
+
+impl Widget for MusicPlayer {
+    fn draw(&mut self) {
+        self.redraw();
+    }
+
+    fn on_click(&mut self, x: i32, y: i32) -> bool {
+        self.click(x, y)
+    }
+
+    fn on_key(&mut self, key: u8) -> bool {
+        self.key(key)
+    }
+
+    fn tick(&mut self) -> bool {
+        self.update()
+    }
+
+    fn poll(&mut self) {
+        self.pump();
     }
 }
 
