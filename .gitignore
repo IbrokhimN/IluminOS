@@ -22,6 +22,9 @@ kernel/kernel
 edk2-ovmf/*.fd
 edk2-ovmf/*.bin
 
+build.log
+*.log
+
 // temporary editor and system files
 .DS_Store
 *.swp
