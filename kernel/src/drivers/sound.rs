@@ -309,6 +309,19 @@ impl SongPlayer {
         }
     }
 
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn seek(&mut self, pos: usize) {
+        self.pos = pos.min(self.data.len());
+        self.silence_fills = 0;
+    }
+
     pub fn finished(&self) -> bool {
         self.pos >= self.data.len()
     }

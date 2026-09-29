@@ -106,6 +106,7 @@ pub const ICON_CLOCK: Icon = Icon(include_bytes!("icons/clock.bmp"));
 pub const ICON_CALC: Icon = Icon(include_bytes!("icons/calc.bmp"));
 pub const ICON_PAINT: Icon = Icon(include_bytes!("icons/paint.bmp"));
 pub const ICON_FILES: Icon = Icon(include_bytes!("icons/files.bmp"));
+pub const ICON_PLAYER: Icon = Icon(include_bytes!("icons/player.bmp"));
 
 impl Icon {
     // draw icon at x y
