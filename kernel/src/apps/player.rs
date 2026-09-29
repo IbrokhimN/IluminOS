@@ -7,6 +7,14 @@ include!(concat!(env!("OUT_DIR"), "/songs_generated.rs"));
 
 pub const PLAYER_SAMPLE_RATE: u16 = 11025;
 
+pub fn count() -> usize {
+    SONGS.len()
+}
+
+pub fn song(index: usize) -> Option<(&'static str, &'static [u8])> {
+    SONGS.get(index).map(|(n, d)| (*n, *d))
+}
+
 pub fn find(name: &str) -> Option<&'static [u8]> {
     SONGS.iter().find(|(n, _)| *n == name).map(|(_, data)| *data)
 }

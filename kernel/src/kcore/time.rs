@@ -72,6 +72,10 @@ pub fn init() {
     BOOT_TSC.store(rdtsc(), Ordering::Relaxed);
 }
 
+pub fn ticks_per_ms() -> u64 {
+    (TSC_HZ.load(Ordering::Relaxed) / 1000).max(1)
+}
+
 pub fn ticks_since_boot() -> u64 {
     rdtsc().wrapping_sub(BOOT_TSC.load(Ordering::Relaxed))
 }
