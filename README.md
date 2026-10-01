@@ -80,6 +80,47 @@ The full shell command reference, architecture breakdown, key technical decision
 * save Paint drawings to a file
 * games as GUI applications
 
+# GUI
+
+<div align="center">
+  <table border="0">
+    <tr>
+      <td width="33%" align="center">
+        <a href="https://github.com/user-attachments/assets/497162a7-a296-459c-8bdc-56ade769a047">
+          <img src="https://github.com/user-attachments/assets/497162a7-a296-459c-8bdc-56ade769a047" width="100%" alt="IluminOS Preview 1" />
+        </a>
+      </td>
+      <td width="33%" align="center">
+        <a href="https://github.com/user-attachments/assets/b52f3d2b-b2fa-49aa-ac51-82b5c0d55bc5">
+          <img src="https://github.com/user-attachments/assets/b52f3d2b-b2fa-49aa-ac51-82b5c0d55bc5" width="100%" alt="IluminOS Preview 2" />
+        </a>
+      </td>
+      <td width="33%" align="center">
+        <a href="https://github.com/user-attachments/assets/8ce74870-5512-4b63-afb9-04a928d49c24">
+          <img src="https://github.com/user-attachments/assets/8ce74870-5512-4b63-afb9-04a928d49c24" width="100%" alt="IluminOS Preview 3" />
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td width="33%" align="center">
+        <a href="https://github.com/user-attachments/assets/7f3957f2-98dc-47f8-b536-8aa601793f02">
+          <img src="https://github.com/user-attachments/assets/7f3957f2-98dc-47f8-b536-8aa601793f02" width="100%" alt="IluminOS Preview 4" />
+        </a>
+      </td>
+      <td width="33%" align="center">
+        <a href="https://github.com/user-attachments/assets/e8355b2e-ebe8-4147-a89b-77953ddf7129">
+          <img src="https://github.com/user-attachments/assets/e8355b2e-ebe8-4147-a89b-77953ddf7129" width="100%" alt="IluminOS Preview 5" />
+        </a>
+      </td>
+      <td width="33%" align="center">
+        <a href="https://github.com/user-attachments/assets/2f3d7e99-82fd-4b64-bf88-6925124ae974">
+          <img src="https://github.com/user-attachments/assets/2f3d7e99-82fd-4b64-bf88-6925124ae974" width="100%" alt="IluminOS Preview 6" />
+        </a>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Author
 
 **Ibrokhim Nurullaev**, [github.com/IbrokhimN](https://github.com/IbrokhimN)  
