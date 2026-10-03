@@ -25,6 +25,21 @@ embedded-text = "0.7"
 embedded-io  = { version = "0.6", default-features = false }
 rand_core    = { version = "0.6", default-features = false }
 
+tinyrlibc = { version = "0.5", default-features = false, features = [
+    "alloc",
+    "abs", "atoi", "memchr", "qsort", "rand",
+    "isalpha", "isdigit", "isspace", "isupper",
+    "strcat", "strchr", "strcmp", "strcpy", "strcspn", "strlen",
+    "strncasecmp", "strncmp", "strncpy", "strrchr", "strspn", "strstr",
+    "strtol", "strtoll", "strtoul", "strtoull",
+] }
+printf-compat = { version = "0.5", default-features = false }
+libm = "0.2"
+
+[features]
+default = ["c-math"]
+c-math = []
+
 [profile.dev]
 panic = "abort"
 

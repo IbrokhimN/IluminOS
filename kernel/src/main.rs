@@ -7,6 +7,7 @@ extern crate alloc;
 // subsystems by folder
 mod kcore;
 mod mem;
+mod libc;
 mod drivers;
 mod fs;
 mod gui;

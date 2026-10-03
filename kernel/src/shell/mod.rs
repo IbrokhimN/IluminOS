@@ -19,7 +19,7 @@ const COMMANDS: &[&str] = &[
     "uptime", "whoami", "hostname", "theme", "history", "cowsay", "calc",
     "date", "about", "tree", "wc", "find", "cp", "lspci", "nic", "ping", "htop", "piano",
     "lock", "beep", "reboot", "shutdown", "neofetch", "sleep", "dice", "banner",
-    "gemini", "gem", "play", "songs",
+    "gemini", "gem", "play", "songs", "libctest",
 ];
 
 // command history and executed count
@@ -210,6 +210,7 @@ fn handle(line: &str) {
         "mem" => cmd_mem(),
         "memtest" => cmd_memtest(),
         "wasm" => crate::wasm::run_demo(),
+        "libctest" => crate::libc::selftest::run(),
         "run" => cmd_run(arg),
         "rand" => cmd_rand(arg),
         "gui" => cmd_gui(),
@@ -265,6 +266,7 @@ print_color!(YELLOW, "+-- Executables & Dev ------------------------------------
 println!("|                                                         |");
 println!("|  run            <file>        Execute script file       |");
 println!("|  wasm                         Run WebAssembly module    |");
+println!("|  libctest                     Run libc self-test        |");
 println!("|  calc           <expr>        Quick arithmetic          |");
 println!("|  mem / memtest                Memory state & diagnostics|");
 println!("|                                                         |");
